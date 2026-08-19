@@ -192,7 +192,14 @@ src/
 
 ## Deploy en Vercel
 
-El repo ya trae `vercel.json` con el framework, el build y los headers de caché.
+El repo ya trae `vercel.json` con el framework, el build y los headers de caché:
+los archivos de `/assets` llevan hash en el nombre y cambian en cada build, así
+que se cachean para siempre; el documento raíz se revalida siempre, o un deploy
+nuevo nunca llegaría al usuario.
+
+> `vercel.json` no admite comentarios: su schema rechaza cualquier propiedad
+> extra dentro de `headers[]`, incluida la convención `"//"`. Por eso la
+> explicación vive acá y no en el archivo.
 
 **Desde la web (recomendado):**
 
