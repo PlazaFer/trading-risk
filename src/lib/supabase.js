@@ -1,82 +1,85 @@
-// Supabase Configuration
-// These will be set when you configure Supabase
-// Create a .env file with:
-// VITE_SUPABASE_URL=your-project-url
-// VITE_SUPABASE_ANON_KEY=your-anon-key
+/**
+ * Supabase backend.
+ *
+ * This is the only place the journal stores anything. Trades, daily notes,
+ * cash flows, settings and screenshots all live in the Supabase project named
+ * by the build-time env vars — there is no local fallback and nothing for the
+ * user to choose. See `supabase/schema.sql` for the tables, the analysis
+ * views and the image bucket.
+ *
+ * Because `VITE_*` values are inlined into the bundle at build time, the app
+ * points at whichever project was configured when it was built. In Vercel,
+ * set them under Project Settings → Environment Variables and redeploy.
+ */
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || ''
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
+import { createClient } from '@supabase/supabase-js'
 
-// Only create client if configured
-let supabase = null
+// Optional chaining on `import.meta.env` itself: Vite always defines it, but
+// plain Node does not, and this module sits on the import path of the pure
+// calculation code that gets exercised outside the bundler.
+const URL = import.meta.env?.VITE_SUPABASE_URL?.trim() || ''
+const KEY = import.meta.env?.VITE_SUPABASE_ANON_KEY?.trim() || ''
 
-export function isSupabaseConfigured() {
-  return Boolean(supabaseUrl && supabaseAnonKey && supabaseUrl.length > 0 && supabaseAnonKey.length > 0)
+export const IMAGE_BUCKET = 'trade-images'
+
+export const TABLES = {
+  trades: 'trades',
+  dayNotes: 'day_notes',
+  cashFlows: 'cash_flows',
+  settings: 'app_settings',
 }
 
-// Lazy initialization - only create client when needed and configured
+export const MISSING_CONFIG_MESSAGE =
+  'Supabase no está configurado. Faltan VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY en el build.'
+
+let client = null
+
+export function isSupabaseConfigured() {
+  return Boolean(URL && KEY && URL.startsWith('http'))
+}
+
 export function getSupabase() {
-  if (!isSupabaseConfigured()) {
-    return null
-  }
-  
-  if (!supabase) {
-    // Dynamic import to avoid loading supabase-js if not needed
-    import('@supabase/supabase-js').then(({ createClient }) => {
-      supabase = createClient(supabaseUrl, supabaseAnonKey)
+  if (!isSupabaseConfigured()) return null
+  if (!client) {
+    client = createClient(URL, KEY, {
+      auth: { persistSession: false },
+      db: { schema: 'public' },
     })
   }
-  
+  return client
+}
+
+/**
+ * Every read and write goes through here. Without credentials there is no
+ * degraded mode to fall back to, so we fail loudly instead of writing data
+ * somewhere the user would never find it again.
+ */
+export function requireSupabase() {
+  const supabase = getSupabase()
+  if (!supabase) throw new Error(MISSING_CONFIG_MESSAGE)
   return supabase
 }
 
-// For backwards compatibility - but returns null if not configured
-export { supabase }
+/** Host shown in Settings so you can tell which project you are pointed at. */
+export function supabaseHost() {
+  if (!URL) return ''
+  try {
+    // `URL` is shadowed by the env constant above, hence the global lookup.
+    return new globalThis.URL(URL).host
+  } catch {
+    return URL
+  }
+}
 
-/*
-===========================================
-SUPABASE SETUP INSTRUCTIONS
-===========================================
-
-1. Go to https://supabase.com and create a free account
-2. Create a new project
-3. Go to SQL Editor and run:
-
--- Create trades table
-CREATE TABLE trades (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  date DATE NOT NULL,
-  pair VARCHAR(20) NOT NULL,
-  direction VARCHAR(10) NOT NULL CHECK (direction IN ('Long', 'Short')),
-  balance_trade DECIMAL(12, 4) NOT NULL,
-  commission DECIMAL(12, 4) DEFAULT 0,
-  final_result DECIMAL(12, 4) NOT NULL,
-  notes TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- Create index for faster queries
-CREATE INDEX idx_trades_date ON trades(date DESC);
-CREATE INDEX idx_trades_pair ON trades(pair);
-
--- Enable Row Level Security (optional but recommended)
-ALTER TABLE trades ENABLE ROW LEVEL SECURITY;
-
--- Create policy to allow all operations (for personal use)
-CREATE POLICY "Allow all operations" ON trades
-  FOR ALL
-  USING (true)
-  WITH CHECK (true);
-
-4. Go to Project Settings > API
-5. Copy the Project URL and anon public key
-6. Create a .env file in the project root:
-
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-key
-
-7. Restart the dev server
-
-===========================================
-*/
+/** Round-trip probe used by the Settings connection test. */
+export async function pingSupabase() {
+  const supabase = getSupabase()
+  if (!supabase) return { ok: false, error: MISSING_CONFIG_MESSAGE }
+  try {
+    const { error } = await supabase.from(TABLES.trades).select('id').limit(1)
+    if (error) return { ok: false, error: error.message }
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+}
