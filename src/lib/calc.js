@@ -8,7 +8,15 @@
  */
 
 import { getInstrument, commissionFor } from './instruments.js'
-import { sessionOf, tradingDayKey, durationMinutes, exchangeWeekday, exchangeHour, EXCHANGE_TZ } from './time.js'
+import {
+  sessionOf,
+  tradingDayKey,
+  durationMinutes,
+  exchangeWeekday,
+  exchangeHour,
+  EXCHANGE_TZ,
+  WEEKDAY_LABELS,
+} from './time.js'
 
 export const DIRECTIONS = ['Long', 'Short']
 
@@ -211,6 +219,26 @@ export function chronological(trades) {
   })
 }
 
+/**
+ * The values in `list` that are genuinely present, as numbers.
+ *
+ * The subtlety this exists for: `Number(null)` is `0`, not `NaN`, so the
+ * obvious `.map(Number).filter(Number.isFinite)` silently turns every trade
+ * with no stop into a 0R trade and every trade with no exit time into a
+ * zero-minute hold. Absence has to be dropped before the conversion, not
+ * after it — otherwise averages get quietly dragged toward zero by rows that
+ * were never measured at all.
+ */
+function numeric(list) {
+  const out = []
+  for (const v of list) {
+    if (v === null || v === undefined || v === '') continue
+    const n = Number(v)
+    if (Number.isFinite(n)) out.push(n)
+  }
+  return out
+}
+
 const EMPTY_STATS = {
   count: 0,
   wins: 0,
@@ -240,9 +268,27 @@ const EMPTY_STATS = {
   avgHoldLoss: null,
   maxWinStreak: 0,
   maxLossStreak: 0,
+  avgWinStreak: 0,
+  avgLossStreak: 0,
   currentStreak: 0,
   maxDrawdown: 0,
   maxDrawdownPct: 0,
+  avgR: null,
+  maxR: null,
+  minR: null,
+  avgWinR: null,
+  avgLossR: null,
+  tradesWithR: 0,
+  avgPlannedRR: null,
+  maxPlannedRR: null,
+  tradesWithPlan: 0,
+  planCapture: null,
+  returnPct: 0,
+  bestWinPct: null,
+  avgWinPct: null,
+  worstLossPct: null,
+  avgLossPct: null,
+  recoveryFactor: null,
   avgRiskPct: null,
   maxRiskPct: null,
   avgRisk: null,
@@ -275,6 +321,8 @@ export function computeStats(trades, { startingBalance = 0 } = {}) {
   let totalPoints = 0
   let totalR = 0
   let rCount = 0
+  const rValues = []
+  const plannedRRs = []
 
   for (const t of ordered) {
     const net = Number(t.net_pnl) || 0
@@ -285,7 +333,10 @@ export function computeStats(trades, { startingBalance = 0 } = {}) {
     if (t.r_multiple !== null && t.r_multiple !== undefined && Number.isFinite(Number(t.r_multiple))) {
       totalR += Number(t.r_multiple)
       rCount += 1
+      rValues.push(Number(t.r_multiple))
     }
+    const plan = Number(t.planned_rr)
+    if (Number.isFinite(plan) && plan > 0) plannedRRs.push(plan)
     if (net > 0) wins.push(t)
     else if (net < 0) losses.push(t)
     else breakeven.push(t)
@@ -308,12 +359,35 @@ export function computeStats(trades, { startingBalance = 0 } = {}) {
 
   // Position-sizing discipline: how much of the risk capital each trade put
   // up, and whether that number stayed put.
-  const riskPcts = ordered.map((t) => Number(t.risk_pct)).filter((v) => Number.isFinite(v))
-  const riskAmounts = ordered.map((t) => Number(t.risk_amount)).filter((v) => Number.isFinite(v))
+  const riskPcts = numeric(ordered.map((t) => t.risk_pct))
+  const riskAmounts = numeric(ordered.map((t) => t.risk_amount))
 
   const holdAll = avgOf(ordered.map((t) => t.duration_min))
   const holdWin = avgOf(wins.map((t) => t.duration_min))
   const holdLoss = avgOf(losses.map((t) => t.duration_min))
+
+  /* ------------------------------------------------------------------
+     Results as a share of the account.
+
+     A trader compares "+0.84% average win" across accounts of any size;
+     "+$242" only means something once you also know the balance. Measured
+     against the starting balance so the denominator is stable — using the
+     running balance would make identical trades score differently depending
+     on when they happened.
+     ------------------------------------------------------------------ */
+  const base = Number(startingBalance) || 0
+  const asPct = (v) => (base > 0 && Number.isFinite(v) ? (v / base) * 100 : null)
+
+  const avgR = rCount ? totalR / rCount : null
+  const avgPlannedRR = plannedRRs.length
+    ? plannedRRs.reduce((a, b) => a + b, 0) / plannedRRs.length
+    : null
+
+  const winRs = numeric(wins.map((t) => t.r_multiple))
+  const lossRs = numeric(losses.map((t) => t.r_multiple))
+
+  const largestWin = wins.length ? Math.max(...wins.map((t) => Number(t.net_pnl))) : 0
+  const largestLoss = losses.length ? Math.min(...losses.map((t) => Number(t.net_pnl))) : 0
 
   return {
     count: ordered.length,
@@ -335,8 +409,40 @@ export function computeStats(trades, { startingBalance = 0 } = {}) {
     expectancy: (winRate / 100) * avgWin - (lossRate / 100) * avgLoss,
     expectancyR: rCount ? totalR / rCount : 0,
     totalR,
-    largestWin: wins.length ? Math.max(...wins.map((t) => Number(t.net_pnl))) : 0,
-    largestLoss: losses.length ? Math.min(...losses.map((t) => Number(t.net_pnl))) : 0,
+    largestWin,
+    largestLoss,
+
+    // R:R — what you actually got, and what you had planned to get.
+    avgR,
+    maxR: rValues.length ? Math.max(...rValues) : null,
+    minR: rValues.length ? Math.min(...rValues) : null,
+    avgWinR: winRs.length ? winRs.reduce((a, b) => a + b, 0) / winRs.length : null,
+    avgLossR: lossRs.length ? lossRs.reduce((a, b) => a + b, 0) / lossRs.length : null,
+    tradesWithR: rCount,
+    avgPlannedRR,
+    maxPlannedRR: plannedRRs.length ? Math.max(...plannedRRs) : null,
+    tradesWithPlan: plannedRRs.length,
+    /**
+     * How much of the planned target the winners actually collected.
+     *
+     * Measured on winners only, and deliberately so: a loser stopped at −1R
+     * captured nothing of its target by design, and averaging those in would
+     * blame the exits for trades that simply did not work. Restricted to the
+     * winners, the number answers exactly one question — when the trade goes
+     * your way, do you sit for the target or take the money at half of it?
+     */
+    planCapture:
+      winRs.length && avgPlannedRR
+        ? ((winRs.reduce((a, b) => a + b, 0) / winRs.length) / avgPlannedRR) * 100
+        : null,
+
+    // Everything as a share of the account.
+    returnPct: asPct(netPnl) ?? 0,
+    bestWinPct: wins.length ? asPct(largestWin) : null,
+    avgWinPct: wins.length ? asPct(avgWin) : null,
+    worstLossPct: losses.length ? asPct(largestLoss) : null,
+    avgLossPct: losses.length ? asPct(-avgLoss) : null,
+
     contracts,
     avgContracts: contracts / ordered.length,
     totalPoints,
@@ -350,6 +456,9 @@ export function computeStats(trades, { startingBalance = 0 } = {}) {
     ...streaks,
     ...dd,
     ...daily,
+    // Profit earned per dollar of peak-to-trough pain. Under 1 the strategy
+    // never made back more than its worst slide.
+    recoveryFactor: dd.maxDrawdown > 0 ? netPnl / dd.maxDrawdown : null,
   }
 }
 
@@ -421,31 +530,57 @@ export function computeRuleBreaks(trades, { maxDailyLoss = 0, maxTradesPerDay = 
 }
 
 function avgOf(values) {
-  const nums = values.filter((v) => Number.isFinite(Number(v))).map(Number)
+  const nums = numeric(values)
   if (!nums.length) return null
   return nums.reduce((a, b) => a + b, 0) / nums.length
 }
 
 /**
- * Longest run of wins and of losses, plus the streak currently in progress
- * (positive = winning run, negative = losing run). Breakeven trades are
- * transparent: they neither extend nor break a run.
+ * Runs of wins and of losses: the longest of each, the average length, and
+ * the streak currently in progress (positive = winning run, negative =
+ * losing run). Breakeven trades are transparent: they neither extend nor
+ * break a run.
+ *
+ * The average matters as much as the maximum. A max losing streak of 6 is
+ * only alarming if the average is 4; if the average is 1.2, that 6 was an
+ * outlier and sizing rules built around it are overkill.
  */
 function computeStreaks(ordered) {
-  let maxWin = 0
-  let maxLoss = 0
+  const winRuns = []
+  const lossRuns = []
   let run = 0
+
+  const flush = () => {
+    if (run > 0) winRuns.push(run)
+    else if (run < 0) lossRuns.push(-run)
+  }
 
   for (const t of ordered) {
     const net = Number(t.net_pnl) || 0
     if (net === 0) continue
-    if (net > 0) run = run > 0 ? run + 1 : 1
-    else run = run < 0 ? run - 1 : -1
-    if (run > maxWin) maxWin = run
-    if (run < maxLoss) maxLoss = run
+    if (net > 0) {
+      if (run > 0) run += 1
+      else {
+        flush()
+        run = 1
+      }
+    } else if (run < 0) run -= 1
+    else {
+      flush()
+      run = -1
+    }
   }
+  flush()
 
-  return { maxWinStreak: maxWin, maxLossStreak: Math.abs(maxLoss), currentStreak: run }
+  const mean = (list) => (list.length ? list.reduce((a, b) => a + b, 0) / list.length : 0)
+
+  return {
+    maxWinStreak: winRuns.length ? Math.max(...winRuns) : 0,
+    maxLossStreak: lossRuns.length ? Math.max(...lossRuns) : 0,
+    avgWinStreak: mean(winRuns),
+    avgLossStreak: mean(lossRuns),
+    currentStreak: run,
+  }
 }
 
 /**
@@ -602,9 +737,7 @@ export function groupPerformance(trades, keyFn, { labelFn } = {}) {
       const netPnl = b.trades.reduce((s, t) => s + (Number(t.net_pnl) || 0), 0)
       const grossProfit = wins.reduce((s, t) => s + Number(t.net_pnl), 0)
       const grossLoss = Math.abs(losses.reduce((s, t) => s + Number(t.net_pnl), 0))
-      const rs = b.trades
-        .map((t) => Number(t.r_multiple))
-        .filter((r) => Number.isFinite(r))
+      const rs = numeric(b.trades.map((t) => t.r_multiple))
       return {
         key: b.key,
         label: b.label,
@@ -624,7 +757,7 @@ export function groupPerformance(trades, keyFn, { labelFn } = {}) {
 
 /** Histogram of R-multiples, bucketed to whole R. */
 export function buildRDistribution(trades) {
-  const rs = trades.map((t) => Number(t.r_multiple)).filter((r) => Number.isFinite(r))
+  const rs = numeric(trades.map((t) => t.r_multiple))
   if (!rs.length) return []
 
   const min = Math.floor(Math.min(...rs))
@@ -654,4 +787,296 @@ export function weekdayPerformance(trades) {
 
 export function hourPerformance(trades) {
   return groupPerformance(trades, (t) => exchangeHour(t.entry_at)).sort((a, b) => a.key - b.key)
+}
+
+/* ==================================================================
+   ANALYTICS SERIES
+   Everything below turns the trade list into the shapes the Analytics
+   page charts consume. Kept here rather than in components so the math
+   stays testable and the components stay dumb.
+   ================================================================== */
+
+const pad2 = (n) => String(n).padStart(2, '0')
+
+/** The Monday that owns a `YYYY-MM-DD` day, as its own day key. */
+function weekStartOf(dayKey) {
+  const [y, m, d] = dayKey.split('-').map(Number)
+  if (!y || !m || !d) return null
+  const dt = new Date(Date.UTC(y, m - 1, d))
+  const dow = dt.getUTCDay()
+  dt.setUTCDate(dt.getUTCDate() + (dow === 0 ? -6 : 1 - dow))
+  return `${dt.getUTCFullYear()}-${pad2(dt.getUTCMonth() + 1)}-${pad2(dt.getUTCDate())}`
+}
+
+const MONTH_LABELS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+export { MONTH_LABELS }
+
+/**
+ * Running equity, bucketed.
+ *
+ * `trade` plots every fill — the honest resolution, and the only one that
+ * shows an intraday round trip. `day`, `week` and `month` collapse the noise
+ * so a long history reads as a trend instead of a seismograph. All four share
+ * a shape so one chart component renders any of them.
+ */
+export function buildEquitySeries(trades, { startingBalance = 0, bucket = 'trade' } = {}) {
+  const ordered = chronological(trades)
+  if (!ordered.length) return []
+
+  const anchor = {
+    key: 'start',
+    label: 'Inicio',
+    equity: round(startingBalance, 2),
+    pnl: 0,
+    cumulative: 0,
+    count: 0,
+    wins: 0,
+    trade: null,
+  }
+
+  if (bucket === 'trade') {
+    let equity = startingBalance
+    const series = [anchor]
+    ordered.forEach((t, i) => {
+      const net = Number(t.net_pnl) || 0
+      equity += net
+      series.push({
+        key: t.id || `t${i}`,
+        label: `#${i + 1}`,
+        date: t.day,
+        equity: round(equity, 2),
+        pnl: round(net, 2),
+        cumulative: round(equity - startingBalance, 2),
+        count: 1,
+        wins: net > 0 ? 1 : 0,
+        trade: t,
+      })
+    })
+    return series
+  }
+
+  const keyOf = (t) => {
+    if (!t.day) return null
+    if (bucket === 'month') return t.day.slice(0, 7)
+    if (bucket === 'week') return weekStartOf(t.day)
+    return t.day
+  }
+
+  const buckets = new Map()
+  for (const t of ordered) {
+    const key = keyOf(t)
+    if (!key) continue
+    const b = buckets.get(key) || { key, pnl: 0, count: 0, wins: 0 }
+    b.pnl += Number(t.net_pnl) || 0
+    b.count += 1
+    if (Number(t.net_pnl) > 0) b.wins += 1
+    buckets.set(key, b)
+  }
+
+  let equity = startingBalance
+  const series = [anchor]
+  for (const b of [...buckets.values()].sort((a, c) => a.key.localeCompare(c.key))) {
+    equity += b.pnl
+    series.push({
+      ...b,
+      label:
+        bucket === 'month'
+          ? `${MONTH_LABELS[Number(b.key.slice(5, 7)) - 1]} ${b.key.slice(2, 4)}`
+          : b.key.slice(5).split('-').reverse().join('/'),
+      date: b.key,
+      pnl: round(b.pnl, 2),
+      equity: round(equity, 2),
+      cumulative: round(equity - startingBalance, 2),
+      trade: null,
+    })
+  }
+  return series
+}
+
+/**
+ * The underwater curve: how far below the previous equity peak the account
+ * sat after every trade, plus the shape of the deepest hole.
+ *
+ * Drawdown is where accounts actually die — not on the losing trade, but on
+ * the eleventh day of not making it back. Duration is therefore reported
+ * alongside depth.
+ */
+export function buildDrawdownSeries(trades, { startingBalance = 0 } = {}) {
+  const ordered = chronological(trades)
+  let equity = startingBalance
+  let peak = startingBalance
+
+  const points = [
+    { key: 'start', label: 'Inicio', drawdown: 0, drawdownPct: 0, equity: round(equity, 2), date: null },
+  ]
+
+  let deepest = 0
+  let deepestPct = 0
+  let currentRun = 0
+  let longestRun = 0
+  let underwaterTrades = 0
+
+  ordered.forEach((t, i) => {
+    equity += Number(t.net_pnl) || 0
+    if (equity >= peak) {
+      peak = equity
+      currentRun = 0
+    } else {
+      currentRun += 1
+      underwaterTrades += 1
+      if (currentRun > longestRun) longestRun = currentRun
+    }
+    const dd = equity - peak
+    const ddPct = peak > 0 ? (dd / peak) * 100 : 0
+    if (dd < deepest) {
+      deepest = dd
+      deepestPct = ddPct
+    }
+    points.push({
+      key: t.id || `t${i}`,
+      label: `#${i + 1}`,
+      date: t.day,
+      equity: round(equity, 2),
+      drawdown: round(dd, 2),
+      drawdownPct: round(ddPct, 2),
+      trade: t,
+    })
+  })
+
+  return {
+    points,
+    maxDrawdown: Math.abs(round(deepest, 2)),
+    maxDrawdownPct: Math.abs(round(deepestPct, 2)),
+    currentDrawdown: Math.abs(round(equity - peak, 2)),
+    currentDrawdownPct: peak > 0 ? Math.abs(round(((equity - peak) / peak) * 100, 2)) : 0,
+    longestRun,
+    // Share of the history spent below a previous high. The number that
+    // explains why a profitable system still feels like losing.
+    underwaterPct: ordered.length ? (underwaterTrades / ordered.length) * 100 : 0,
+    atPeak: equity >= peak,
+  }
+}
+
+/**
+ * Year × month grid of results — the "am I actually compounding?" view.
+ * Percentages are measured against the starting balance so every cell in the
+ * table is comparable to every other one.
+ */
+export function buildMonthlyPerformance(trades, { startingBalance = 0 } = {}) {
+  const byYear = new Map()
+
+  for (const t of trades) {
+    if (!t.day) continue
+    const year = Number(t.day.slice(0, 4))
+    const month = Number(t.day.slice(5, 7)) - 1
+    if (!Number.isFinite(year) || month < 0 || month > 11) continue
+
+    const row = byYear.get(year) || { year, months: Array.from({ length: 12 }, () => null) }
+    const cell = row.months[month] || { netPnl: 0, count: 0, wins: 0 }
+    cell.netPnl += Number(t.net_pnl) || 0
+    cell.count += 1
+    if (Number(t.net_pnl) > 0) cell.wins += 1
+    row.months[month] = cell
+    byYear.set(year, row)
+  }
+
+  const base = Number(startingBalance) || 0
+  return [...byYear.values()]
+    .sort((a, b) => b.year - a.year)
+    .map((row) => {
+      const months = row.months.map((cell) =>
+        cell
+          ? {
+              ...cell,
+              netPnl: round(cell.netPnl, 2),
+              pct: base > 0 ? round((cell.netPnl / base) * 100, 2) : null,
+              winRate: (cell.wins / cell.count) * 100,
+            }
+          : null
+      )
+      const total = months.reduce((s, c) => s + (c?.netPnl || 0), 0)
+      const count = months.reduce((s, c) => s + (c?.count || 0), 0)
+      return {
+        year: row.year,
+        months,
+        total: round(total, 2),
+        totalPct: base > 0 ? round((total / base) * 100, 2) : null,
+        count,
+      }
+    })
+}
+
+/**
+ * How often you actually pull the trigger, on three horizons.
+ *
+ * Overtrading rarely announces itself in a single day; it shows up as a week
+ * that quietly doubled the average. The per-weekday view is an average over
+ * the days that weekday was actually traded, not over calendar weekdays —
+ * otherwise a trader who never touches Fridays looks merely selective.
+ */
+export function buildTradeFrequency(trades) {
+  const days = new Map()
+  const weeks = new Map()
+  const months = new Map()
+
+  for (const t of trades) {
+    if (!t.day) continue
+    days.set(t.day, (days.get(t.day) || 0) + 1)
+    const wk = weekStartOf(t.day)
+    if (wk) weeks.set(wk, (weeks.get(wk) || 0) + 1)
+    const mo = t.day.slice(0, 7)
+    months.set(mo, (months.get(mo) || 0) + 1)
+  }
+
+  const perWeekday = WEEKDAY_ORDER.map((dow) => {
+    const matching = [...days.entries()].filter(([day]) => {
+      const [y, m, d] = day.split('-').map(Number)
+      return new Date(Date.UTC(y, m - 1, d)).getUTCDay() === dow
+    })
+    const total = matching.reduce((s, [, n]) => s + n, 0)
+    return {
+      key: dow,
+      label: WEEKDAY_LABELS[dow],
+      value: matching.length ? round(total / matching.length, 2) : 0,
+      total,
+      days: matching.length,
+    }
+  })
+
+  const list = (map, labelFn) =>
+    [...map.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([key, value]) => ({ key, label: labelFn(key), value }))
+
+  const mean = (map) => {
+    const values = [...map.values()]
+    return values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0
+  }
+
+  return {
+    perWeekday,
+    perWeek: list(weeks, (k) => k.slice(5).split('-').reverse().join('/')),
+    perMonth: list(months, (k) => `${MONTH_LABELS[Number(k.slice(5, 7)) - 1]} ${k.slice(2, 4)}`),
+    avgPerDay: mean(days),
+    avgPerWeek: mean(weeks),
+    avgPerMonth: mean(months),
+    tradingDays: days.size,
+    weeks: weeks.size,
+    months: months.size,
+  }
+}
+
+/**
+ * Running average R after each trade — the sparkline inside the R:R cards.
+ * A rising line means the exits are improving; a sagging one means the last
+ * few trades were cut short.
+ */
+export function buildRunningAverage(trades, field = 'r_multiple') {
+  const values = numeric(chronological(trades).map((t) => t[field]))
+
+  let sum = 0
+  return values.map((v, i) => {
+    sum += v
+    return round(sum / (i + 1), 3)
+  })
 }
