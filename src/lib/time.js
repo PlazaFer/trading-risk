@@ -122,16 +122,31 @@ export function zonedTimeLabel(value, timeZone = EXCHANGE_TZ) {
 }
 
 /**
- * The CME trading day. The Globex session opens at 18:00 ET and belongs to
- * the NEXT calendar date, so a short taken at 21:30 Monday is a Tuesday trade.
- * Sunday's 18:00 open rolls into Monday.
+ * The calendar day a trade is filed under — the key the calendar, the day
+ * page and every per-day statistic group by.
+ *
+ * By default it is simply the date you typed in the form, read on your own
+ * clock (`timeZone`): a trade entered at 22:05 on the 23rd is a trade of the
+ * 23rd, no matter which zone the exchange is in.
+ *
+ * With `futuresSessionDay` the CME convention takes over instead: the Globex
+ * session opens at 18:00 ET and belongs to the NEXT calendar date, so a short
+ * taken at 21:30 Monday is a Tuesday trade, and Sunday's 18:00 open rolls
+ * into Monday. That convention is defined entirely on the exchange clock —
+ * mixing it with a local date would produce a day that is neither.
  */
-export function tradingDayKey(value, { futuresSessionDay = true } = {}) {
+export function tradingDayKey(value, { futuresSessionDay = false, timeZone = EXCHANGE_TZ } = {}) {
   if (!value) return ''
   const date = value instanceof Date ? value : new Date(value)
   if (Number.isNaN(date.getTime())) return ''
+
+  if (!futuresSessionDay) {
+    const local = zonedParts(date, timeZone)
+    return `${local.year}-${pad(local.month)}-${pad(local.day)}`
+  }
+
   const p = zonedParts(date, EXCHANGE_TZ)
-  if (!futuresSessionDay || p.hour < 18) {
+  if (p.hour < 18) {
     return `${p.year}-${pad(p.month)}-${pad(p.day)}`
   }
   const next = new Date(Date.UTC(p.year, p.month - 1, p.day + 1))

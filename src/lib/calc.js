@@ -8,7 +8,7 @@
  */
 
 import { getInstrument, commissionFor } from './instruments.js'
-import { sessionOf, tradingDayKey, durationMinutes, exchangeWeekday, exchangeHour } from './time.js'
+import { sessionOf, tradingDayKey, durationMinutes, exchangeWeekday, exchangeHour, EXCHANGE_TZ } from './time.js'
 
 export const DIRECTIONS = ['Long', 'Short']
 
@@ -171,7 +171,10 @@ export function deriveTrade(input, settings = {}) {
     planned_rr: plannedRR === null ? null : round(plannedRR, 2),
     outcome,
     session: input.session || sessionOf(entryAt),
-    day: tradingDayKey(entryAt, { futuresSessionDay: settings.futuresSessionDay !== false }),
+    day: tradingDayKey(entryAt, {
+      futuresSessionDay: settings.futuresSessionDay === true,
+      timeZone: settings.timezone || EXCHANGE_TZ,
+    }),
     duration_min: durationMinutes(entryAt, exitAt),
     tags: Array.isArray(input.tags) ? input.tags : [],
     mistakes: Array.isArray(input.mistakes) ? input.mistakes : [],

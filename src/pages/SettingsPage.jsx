@@ -322,7 +322,7 @@ export default function SettingsPage() {
             <label className="flex h-[42px] cursor-pointer items-center gap-3 rounded-lg border border-line bg-bg-sub px-3">
               <input
                 type="checkbox"
-                checked={settings.futuresSessionDay !== false}
+                checked={settings.futuresSessionDay === true}
                 onChange={(e) => updateSettings({ futuresSessionDay: e.target.checked })}
                 className="h-4 w-4 accent-[rgb(var(--c-primary))]"
               />
@@ -334,9 +334,11 @@ export default function SettingsPage() {
         </div>
 
         <p className="mt-2 text-[11px] leading-relaxed text-ink-faint">
-          Con la convención Globex activada, un trade tomado a las 21:30 ET del lunes cuenta como
-          martes, igual que en tu estado de cuenta del bróker. Si cambiás esta opción o las
-          comisiones, recalculá los trades existentes desde la sección Datos.
+          Desactivada (por defecto), cada trade queda archivado en la fecha que cargaste en el
+          formulario, leída en tu zona horaria: uno tomado el 23 a las 22:05 es un trade del 23.
+          Activada, se usa la convención Globex y ese mismo trade cuenta como del día siguiente,
+          igual que en tu estado de cuenta del bróker. Si cambiás esta opción, la zona horaria o
+          las comisiones, recalculá los trades existentes desde la sección Datos.
         </p>
 
         <div className="mt-5">

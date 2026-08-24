@@ -14,7 +14,7 @@ import { deriveTrade, computeStats } from '../lib/calc.js'
 import { deleteImage } from '../lib/imageStore.js'
 import { isSupabaseConfigured, supabaseHost, MISSING_CONFIG_MESSAGE } from '../lib/supabase.js'
 import { DEFAULT_SETUPS, DEFAULT_MISTAKES, DEFAULT_TAGS } from '../lib/taxonomy.js'
-import { EXCHANGE_TZ } from '../lib/time.js'
+import { EXCHANGE_TZ, tradingDayKey } from '../lib/time.js'
 
 const JournalContext = createContext(null)
 
@@ -23,9 +23,13 @@ export const DEFAULT_SETTINGS = {
   startingBalance: 0,
 
   // The clock you read on your platform. Times you type are interpreted in
-  // this zone; session analytics always convert to exchange time.
+  // this zone, and a trade is filed under the date you typed on it; session
+  // analytics always convert to exchange time.
   timezone: EXCHANGE_TZ,
-  futuresSessionDay: true,
+
+  // Off by default: the calendar day is the date on the form. Turn it on to
+  // file trades by the CME session instead (18:00 ET → next day).
+  futuresSessionDay: false,
 
   defaultSymbol: 'MNQ',
   defaultContracts: 1,
@@ -59,11 +63,36 @@ export const DEFAULT_SETTINGS = {
   theme: 'terminal',
 }
 
+/**
+ * One-time settings migration.
+ *
+ * The journal used to file every trade by the Globex session day, so a trade
+ * taken at 22:05 landed on the calendar under the *next* date. That
+ * convention is now opt-in, but a settings row written under the old default
+ * still carries `futuresSessionDay: true`. This clears it exactly once and
+ * leaves the flag alone afterwards, so a trader who deliberately turns the
+ * convention back on keeps it.
+ */
+const DAY_CONVENTION_MIGRATION = 'dayConventionOptIn'
+
+function migrateSettings(settings) {
+  if (!settings || settings[DAY_CONVENTION_MIGRATION]) return settings
+  return { ...settings, futuresSessionDay: false, [DAY_CONVENTION_MIGRATION]: true }
+}
+
+/** The date a trade belongs to under the current settings. */
+function dayFor(trade, settings) {
+  return tradingDayKey(trade.entry_at, {
+    futuresSessionDay: settings.futuresSessionDay === true,
+    timeZone: settings.timezone || EXCHANGE_TZ,
+  })
+}
+
 const uid = () =>
   crypto.randomUUID ? crypto.randomUUID() : `id-${Date.now()}-${Math.random().toString(36).slice(2)}`
 
 export function JournalProvider({ children }) {
-  const [settings, setSettingsState] = useState(() => repo.loadSettingsCache(DEFAULT_SETTINGS))
+  const [settings, setSettingsState] = useState(() => migrateSettings(repo.loadSettingsCache(DEFAULT_SETTINGS)))
   const [trades, setTrades] = useState([])
   const [dayNotes, setDayNotes] = useState([])
   const [cashFlows, setCashFlows] = useState([])
@@ -81,6 +110,28 @@ export function JournalProvider({ children }) {
   tradesRef.current = trades
   const cashFlowsRef = useRef(cashFlows)
   cashFlowsRef.current = cashFlows
+
+  /**
+   * `day` is stored on the row, not derived at render time, so a trade filed
+   * under the old convention (or before a timezone change) keeps pointing at
+   * the wrong date on the calendar until something rewrites it. This puts
+   * every trade back on the date its entry time says it belongs to, and
+   * persists only the rows that actually moved.
+   */
+  const repairDays = useCallback((loaded, live) => {
+    const fixed = loaded.map((t) => {
+      const day = dayFor(t, live)
+      return day && day !== t.day ? { ...t, day } : t
+    })
+    const moved = fixed.filter((t, i) => t !== loaded[i])
+    if (moved.length) {
+      repo
+        .replaceAll({ trades: moved })
+        .then(() => toast.success(`${moved.length} trades reubicados en su fecha`))
+        .catch((err) => console.warn('No se pudieron reubicar los trades:', err.message))
+    }
+    return fixed
+  }, [])
 
   const refresh = useCallback(async () => {
     if (!isSupabaseConfigured()) {
@@ -100,13 +151,15 @@ export function JournalProvider({ children }) {
         repo.loadCashFlows(),
         repo.loadSettingsRemote(DEFAULT_SETTINGS).catch(() => null),
       ])
-      setTrades(t)
       setDayNotes(n)
       setCashFlows(c)
-      if (s) {
-        settingsRef.current = s
-        setSettingsState(s)
-      }
+
+      const live = migrateSettings(s || settingsRef.current)
+      settingsRef.current = live
+      setSettingsState(live)
+      if (live !== s) repo.saveSettings(live)
+
+      setTrades(repairDays(t, live))
     } catch (err) {
       console.error(err)
       setLoadError(err.message || 'Error al cargar el journal')
@@ -114,7 +167,7 @@ export function JournalProvider({ children }) {
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [repairDays])
 
   useEffect(() => {
     refresh()
