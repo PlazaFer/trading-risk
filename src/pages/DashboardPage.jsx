@@ -23,7 +23,7 @@ import {
   weekdayPerformance,
 } from '../lib/calc.js'
 import { filterByPeriod, describeRange } from '../lib/periods.js'
-import { money, percent, pnl, profitFactor, rMultiple } from '../lib/format.js'
+import { money, percent, pnl, pnlText, profitFactor, rMultiple } from '../lib/format.js'
 import { kindClasses } from '../lib/accounts.js'
 import { WEEKDAY_LABELS, sessionLabel } from '../lib/time.js'
 
@@ -213,7 +213,7 @@ export default function DashboardPage() {
                 </p>
                 <p
                   className={`tnum text-[11px] font-medium ${
-                    stats.netPnl >= 0 ? 'text-success' : 'text-danger'
+                    pnlText(stats.netPnl)
                   }`}
                 >
                   {pnl(stats.netPnl)} en el período
@@ -248,7 +248,7 @@ export default function DashboardPage() {
                   value={percent(stats.dayWinRate)}
                   tone={stats.dayWinRate >= 50 ? 'text-success' : 'text-ink'}
                 />
-                <Line label="P&L promedio diario" value={pnl(stats.avgDailyPnl)} tone={stats.avgDailyPnl >= 0 ? 'text-success' : 'text-danger'} />
+                <Line label="P&L promedio diario" value={pnl(stats.avgDailyPnl)} tone={pnlText(stats.avgDailyPnl)} />
                 <Line label="Trades por día" value={stats.avgTradesPerDay.toFixed(1)} />
                 <Line label="Ganancia media" value={money(stats.avgWin)} tone="text-success" />
                 <Line label="Pérdida media" value={money(-stats.avgLoss)} tone="text-danger" />

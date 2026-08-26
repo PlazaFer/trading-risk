@@ -79,13 +79,6 @@ export function profitFactor(input) {
   return n.toFixed(2)
 }
 
-/** Tone class for a signed value: green up, red down, muted flat. */
-export function toneClass(input, { flat = 'text-ink-soft' } = {}) {
-  const n = value(input)
-  if (!Number.isFinite(n) || n === 0) return flat
-  return n > 0 ? 'text-success' : 'text-danger'
-}
-
 export function initials(text = '') {
   return text.trim().slice(0, 2).toUpperCase()
 }
@@ -96,3 +89,58 @@ export function bytes(size) {
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(0)} KB`
   return `${(size / (1024 * 1024)).toFixed(1)} MB`
 }
+
+/* ------------------------------------------------------------ result tone */
+
+/**
+ * What a result *is*, by sign: a win, a loss, or breakeven.
+ *
+ * Breakeven is its own state, not a rounding of one of the other two. A trade
+ * that closed at zero is not a tiny win and not a tiny loss — it is a decision
+ * that returned nothing, and reading it as green flatters the journal while
+ * reading it as grey hides that a trade happened at all. Yellow is the
+ * convention traders already know from FX Replay and the prop dashboards.
+ *
+ * Careful with aggregates: zero can also mean "nothing happened" there. A
+ * caller whose total can be empty must check the count before asking for a
+ * tone, or an account with no trades will glow yellow as if it had gone
+ * flat on purpose.
+ */
+export function pnlTone(v) {
+  // A missing measurement is not a breakeven one. An R-multiple that could
+  // never be computed prints as an em dash, and painting that yellow would
+  // claim a flat result the journal never observed.
+  if (v === null || v === undefined || v === '') return 'none'
+  const n = Number(v)
+  if (!Number.isFinite(n)) return 'none'
+  return n > 0 ? 'win' : n < 0 ? 'loss' : 'breakeven'
+}
+
+// Written as whole class names so Tailwind's scanner can see them here.
+const PNL_TEXT = {
+  win: 'text-success',
+  breakeven: 'text-warning',
+  loss: 'text-danger',
+  none: 'text-ink-faint',
+}
+const PNL_SOFT = {
+  win: 'text-success/80',
+  breakeven: 'text-warning/80',
+  loss: 'text-danger/80',
+  none: 'text-ink-faint',
+}
+const PNL_BG = {
+  win: 'bg-success',
+  breakeven: 'bg-warning',
+  loss: 'bg-danger',
+  none: 'bg-ink-faint/50',
+}
+
+/** Text color for a P&L figure. */
+export const pnlText = (v) => PNL_TEXT[pnlTone(v)]
+
+/** Same, dimmed — for the secondary figures next to a headline number. */
+export const pnlSoft = (v) => PNL_SOFT[pnlTone(v)]
+
+/** Solid fill, for rails, bars and legend dots. */
+export const pnlBg = (v) => PNL_BG[pnlTone(v)]

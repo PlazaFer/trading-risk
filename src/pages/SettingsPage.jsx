@@ -22,7 +22,7 @@ import { countStaleRiskPct } from '../lib/calc.js'
 import { INSTRUMENT_LIST, FAVORITE_SYMBOLS, getInstrument } from '../lib/instruments.js'
 import { TIMEZONES } from '../lib/time.js'
 import { THEMES } from '../lib/themes.js'
-import { money, percent } from '../lib/format.js'
+import { money, percent, pnlText } from '../lib/format.js'
 import { pingSupabase } from '../lib/supabase.js'
 import { exportCsv, exportJson, parseBackup } from '../lib/exporter.js'
 import { replaceAll } from '../lib/repo.js'
@@ -229,7 +229,7 @@ export default function SettingsPage() {
           <Readout
             label="Balance actual"
             value={money(account.balance)}
-            tone={account.pnl >= 0 ? 'text-success' : 'text-danger'}
+            tone={trades.length ? pnlText(account.pnl) : 'text-ink'}
           />
         </div>
 

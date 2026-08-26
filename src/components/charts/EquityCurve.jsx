@@ -12,7 +12,7 @@ import {
 
 import useChartTheme from '../../hooks/useChartTheme.js'
 import { buildEquityCurve } from '../../lib/calc.js'
-import { compactMoney, money, pnl } from '../../lib/format.js'
+import { compactMoney, money, pnl, pnlText } from '../../lib/format.js'
 import ChartTooltip from './ChartTooltip.jsx'
 
 /**
@@ -93,13 +93,13 @@ export default function EquityCurve({ trades, startingBalance = 0, height = 280,
                   {
                     label: 'Resultado',
                     value: pnl(d.pnl),
-                    className: d.pnl >= 0 ? 'text-success' : 'text-danger',
+                    className: pnlText(d.pnl),
                   },
                   { label: 'Equity', value: money(d.equity) },
                   {
                     label: 'Acumulado',
                     value: pnl(d.cumulative),
-                    className: d.cumulative >= 0 ? 'text-success' : 'text-danger',
+                    className: pnlText(d.cumulative),
                   },
                 ]}
                 footer={d.date}

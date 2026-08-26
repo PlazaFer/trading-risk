@@ -12,6 +12,7 @@ import {
 } from 'recharts'
 
 import useChartTheme from '../../hooks/useChartTheme.js'
+import { pnlText } from '../../lib/format.js'
 import ChartTooltip from './ChartTooltip.jsx'
 
 /**
@@ -47,7 +48,10 @@ export default function CategoryBars({
   const colorOf = (d) => {
     if (colorMode === 'primary') return c.primary
     if (colorMode === 'accent') return c.accent
-    return Number(d.value) >= 0 ? c.success : c.danger
+    const v = Number(d.value)
+    // Yellow for a bucket that came out exactly even, the same as everywhere
+    // else: green would round a flat bucket into a profitable one.
+    return v > 0 ? c.success : v < 0 ? c.danger : c.warning
   }
 
   const hasNegative = data.some((d) => Number(d.value) < 0)
@@ -87,7 +91,7 @@ export default function CategoryBars({
                         {
                           label: 'Valor',
                           value: format(d.value),
-                          className: d.value >= 0 ? 'text-success' : 'text-danger',
+                          className: pnlText(d.value),
                         },
                       ]
                 }

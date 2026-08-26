@@ -1,6 +1,6 @@
 import { ArrowDownRight, ArrowUpRight, Camera, MessageSquare, TriangleAlert } from 'lucide-react'
 
-import { money, pnl, rMultiple } from '../../lib/format.js'
+import { money, pnl, pnlBg, pnlSoft, pnlText, rMultiple } from '../../lib/format.js'
 import { formatDuration, sessionLabel, zonedTimeLabel } from '../../lib/time.js'
 import { EMOTION_BY_ID } from '../../lib/taxonomy.js'
 import SmartImage from '../ui/SmartImage.jsx'
@@ -14,11 +14,9 @@ import Rating from '../ui/Rating.jsx'
  * win/loss colour rail so a column of these is scannable without reading.
  */
 export default function TradeCard({ trade, onClick, timezone, compact = false }) {
-  const win = trade.net_pnl > 0
-  const loss = trade.net_pnl < 0
+  const breakeven = Number(trade.net_pnl) === 0
   const Icon = trade.direction === 'Long' ? ArrowUpRight : ArrowDownRight
-
-  const rail = win ? 'bg-success' : loss ? 'bg-danger' : 'bg-ink-faint/50'
+  const rail = pnlBg(trade.net_pnl)
 
   return (
     <button
@@ -72,20 +70,15 @@ export default function TradeCard({ trade, onClick, timezone, compact = false })
 
         {/* Result */}
         <div className="ml-auto shrink-0 text-right">
-          <div
-            className={`tnum font-display text-lg font-bold leading-none ${
-              win ? 'text-success' : loss ? 'text-danger' : 'text-ink-soft'
-            }`}
-          >
-            {pnl(trade.net_pnl)}
+          <div className={`flex items-center justify-end gap-1.5 ${pnlText(trade.net_pnl)}`}>
+            {breakeven && <span className="chip bg-warning/12 text-warning">BE</span>}
+            <span className="tnum font-display text-lg font-bold leading-none">
+              {pnl(trade.net_pnl)}
+            </span>
           </div>
           <div className="mt-1 flex items-center justify-end gap-2 text-[11px] text-ink-faint">
             {trade.r_multiple !== null && trade.r_multiple !== undefined && (
-              <span
-                className={`tnum font-medium ${
-                  trade.r_multiple >= 0 ? 'text-success/80' : 'text-danger/80'
-                }`}
-              >
+              <span className={`tnum font-medium ${pnlSoft(trade.r_multiple)}`}>
                 {rMultiple(trade.r_multiple)}
               </span>
             )}

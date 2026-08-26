@@ -7,7 +7,7 @@ import { CalendarDays, ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import { useJournal } from '../context/JournalContext.jsx'
 import { useUI } from '../context/UIContext.jsx'
 import { computeStats } from '../lib/calc.js'
-import { money, percent, pnl, profitFactor } from '../lib/format.js'
+import { money, percent, pnl, pnlText, profitFactor } from '../lib/format.js'
 import { keyFromDate } from '../lib/time.js'
 
 import CalendarMonth from '../components/journal/CalendarMonth.jsx'
@@ -86,7 +86,7 @@ export default function CalendarPage() {
         <Summary
           label="P&L del mes"
           value={pnl(stats.netPnl)}
-          tone={stats.netPnl > 0 ? 'text-success' : stats.netPnl < 0 ? 'text-danger' : 'text-ink'}
+          tone={pnlText(stats.netPnl)}
         />
         <Summary label="Trades" value={stats.count} />
         <Summary

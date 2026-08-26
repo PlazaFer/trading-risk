@@ -1,4 +1,4 @@
-import { percent } from '../../lib/format.js'
+import { percent, pnlSoft, pnlText } from '../../lib/format.js'
 
 /**
  * Horizontal bars growing out of a shared zero line, with the win rate
@@ -37,6 +37,7 @@ export default function DivergingBars({ rows = [], format, showRate = true, empt
       {rows.map((r) => {
         const value = Number(r.value) || 0
         const positive = value >= 0
+        const flat = value === 0
         const width = (Math.abs(value) / scale) * 100
         const dim = !r.count
 
@@ -57,7 +58,9 @@ export default function DivergingBars({ rows = [], format, showRate = true, empt
               />
               {value !== 0 && (
                 <span
-                  className={`absolute inset-y-1 rounded ${positive ? 'bg-success/70' : 'bg-danger/70'}`}
+                  className={`absolute inset-y-1 rounded ${
+                    flat ? 'bg-warning/70' : positive ? 'bg-success/70' : 'bg-danger/70'
+                  }`}
                   style={{
                     left: positive ? `${axis}%` : `${axis - width}%`,
                     width: `${Math.max(width, 0.4)}%`,
@@ -70,7 +73,7 @@ export default function DivergingBars({ rows = [], format, showRate = true, empt
                 of the longest bar has nowhere to go. */}
             <span
               className={`tnum w-20 shrink-0 text-right text-[11px] font-semibold ${
-                !r.count ? 'text-ink-faint/60' : positive ? 'text-success' : 'text-danger'
+                !r.count ? 'text-ink-faint/60' : pnlText(r.value)
               }`}
             >
               {r.count ? format(value) : '—'}

@@ -1,4 +1,4 @@
-import { pnl, percent, profitFactor } from '../../lib/format.js'
+import { percent, pnl, pnlSoft, pnlText, pnlTone, profitFactor } from '../../lib/format.js'
 import EmptyState from '../ui/EmptyState.jsx'
 import { Layers } from 'lucide-react'
 
@@ -27,7 +27,7 @@ export default function PerformanceList({
     <div className="space-y-1">
       {rows.map((g) => {
         const width = (Math.abs(g.netPnl) / scale) * 100
-        const positive = g.netPnl >= 0
+        const tone = pnlTone(g.netPnl)
         const Row = onSelect ? 'button' : 'div'
 
         return (
@@ -41,7 +41,9 @@ export default function PerformanceList({
             {/* Magnitude bar, drawn behind the text so it never crowds it. */}
             <span
               aria-hidden
-              className={`absolute inset-y-1 left-0 rounded-md ${positive ? 'bg-success/10' : 'bg-danger/10'}`}
+              className={`absolute inset-y-1 left-0 rounded-md ${
+                tone === 'win' ? 'bg-success/10' : tone === 'loss' ? 'bg-danger/10' : 'bg-warning/10'
+              }`}
               style={{ width: `${Math.max(width, 2)}%` }}
             />
 
@@ -56,7 +58,7 @@ export default function PerformanceList({
 
             <span className="relative shrink-0 text-right">
               <span
-                className={`tnum block text-[13px] font-semibold ${positive ? 'text-success' : 'text-danger'}`}
+                className={`tnum block text-[13px] font-semibold ${pnlText(g.netPnl)}`}
               >
                 {pnl(g.netPnl)}
               </span>

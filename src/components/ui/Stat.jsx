@@ -15,14 +15,11 @@ export default function Stat({
   className = '',
   children,
 }) {
+  // `auto` colors by sign, with zero as breakeven rather than neutral: a
+  // result of exactly zero is a result, not the absence of one. Pass an
+  // explicit tone where zero can mean "nothing happened yet".
   const resolved =
-    tone === 'auto'
-      ? signed > 0
-        ? 'success'
-        : signed < 0
-          ? 'danger'
-          : 'neutral'
-      : tone
+    tone === 'auto' ? (signed > 0 ? 'success' : signed < 0 ? 'danger' : 'warning') : tone
 
   const valueTone = {
     success: 'text-success',

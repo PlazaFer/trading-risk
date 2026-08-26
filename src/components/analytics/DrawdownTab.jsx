@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 
 import { buildDailySeries, buildDrawdownSeries } from '../../lib/calc.js'
-import { money, num, percent, pnl } from '../../lib/format.js'
+import { money, num, percent, pnl, pnlSoft, pnlText } from '../../lib/format.js'
 
 import DrawdownCurve from '../charts/DrawdownCurve.jsx'
 import DailyPnlBars from '../charts/DailyPnlBars.jsx'
@@ -165,7 +165,7 @@ export default function DrawdownTab({ trades, stats, account, settings }) {
             <Metric
               label="P&L medio diario"
               value={pnl(stats.avgDailyPnl)}
-              tone={stats.avgDailyPnl >= 0 ? 'text-success' : 'text-danger'}
+              tone={pnlText(stats.avgDailyPnl)}
               divided={false}
             />
             <Metric label="Trades por día" value={num(stats.avgTradesPerDay, 1)} divided={false} />

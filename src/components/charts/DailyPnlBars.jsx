@@ -11,7 +11,7 @@ import {
 } from 'recharts'
 
 import useChartTheme from '../../hooks/useChartTheme.js'
-import { compactMoney, pnl } from '../../lib/format.js'
+import { compactMoney, pnl, pnlText } from '../../lib/format.js'
 import { dateFromKey } from '../../lib/time.js'
 import ChartTooltip from './ChartTooltip.jsx'
 
@@ -55,9 +55,17 @@ export default function DailyPnlBars({ data, height = 240 }) {
                   {
                     label: 'P&L del día',
                     value: pnl(d.netPnl),
-                    className: d.netPnl >= 0 ? 'text-success' : 'text-danger',
+                    className: pnlText(d.netPnl),
                   },
-                  { label: 'Trades', value: `${d.wins}G / ${d.count - d.wins}P` },
+                  {
+                    label: 'Trades',
+                    // Spelled out rather than "wins vs. the rest": lumping the
+                    // breakeven trades in with the losers is exactly the
+                    // arithmetic this journal should not do.
+                    value: `${d.wins}G · ${d.losses ?? d.count - d.wins}P${
+                      d.breakeven ? ` · ${d.breakeven}BE` : ''
+                    }`,
+                  },
                   { label: 'Acumulado', value: pnl(d.cumulative) },
                 ]}
               />
@@ -66,7 +74,11 @@ export default function DailyPnlBars({ data, height = 240 }) {
         />
         <Bar dataKey="netPnl" radius={[3, 3, 0, 0]} maxBarSize={26}>
           {data.map((d) => (
-            <Cell key={d.day} fill={d.netPnl >= 0 ? c.success : c.danger} fillOpacity={0.85} />
+            <Cell
+              key={d.day}
+              fill={d.netPnl > 0 ? c.success : d.netPnl < 0 ? c.danger : c.warning}
+              fillOpacity={0.85}
+            />
           ))}
         </Bar>
       </BarChart>

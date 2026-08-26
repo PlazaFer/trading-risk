@@ -10,7 +10,7 @@ import {
 } from 'date-fns'
 import { Camera, NotebookPen } from 'lucide-react'
 
-import { compactMoney, percent } from '../../lib/format.js'
+import { compactMoney, percent, pnlText } from '../../lib/format.js'
 import { keyFromDate } from '../../lib/time.js'
 
 const WEEKDAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
@@ -44,6 +44,7 @@ export default function CalendarMonth({
       const trades = tradesByDay.get(key) || []
       const netPnl = trades.reduce((s, t) => s + (Number(t.net_pnl) || 0), 0)
       const wins = trades.filter((t) => Number(t.net_pnl) > 0).length
+      const flats = trades.filter((t) => Number(t.net_pnl) === 0).length
       const images = trades.reduce((s, t) => s + (t.images?.length || 0), 0)
       if (trades.length && Math.abs(netPnl) > max) max = Math.abs(netPnl)
       return {
@@ -52,6 +53,7 @@ export default function CalendarMonth({
         trades,
         netPnl,
         wins,
+        flats,
         images,
         note: dayNoteMap?.get(key) || null,
         inMonth: isSameMonth(date, month),
@@ -102,11 +104,7 @@ export default function CalendarMonth({
               <div className="flex flex-col justify-center border-l border-line bg-bg-sub/50 px-2.5 py-2">
                 {weekTrades > 0 ? (
                   <>
-                    <span
-                      className={`tnum text-sm font-semibold ${
-                        weekPnl > 0 ? 'text-success' : weekPnl < 0 ? 'text-danger' : 'text-ink-soft'
-                      }`}
-                    >
+                    <span className={`tnum text-sm font-semibold ${pnlText(weekPnl)}`}>
                       {compactMoney(weekPnl)}
                     </span>
                     <span className="mt-0.5 text-[10px] text-ink-faint">
@@ -127,18 +125,21 @@ export default function CalendarMonth({
 }
 
 function DayCell({ cell, maxAbs, selected, onSelect }) {
-  const { date, trades, netPnl, wins, images, note, inMonth, today } = cell
+  const { date, trades, netPnl, wins, flats, images, note, inMonth, today } = cell
   const active = trades.length > 0
 
   // Floor the tint at 0.10 so a tiny green day still reads as green.
   const intensity = active ? Math.max(0.1, Math.min(Math.abs(netPnl) / maxAbs, 1) * 0.34) : 0
   const positive = netPnl > 0
+  // A day that closed exactly flat still had trades in it. Tinting it grey
+  // like an empty day hides the session; yellow says "you traded and came
+  // out even", which is a different piece of information.
   const flat = active && netPnl === 0
 
   const tint = !active
     ? undefined
     : flat
-      ? 'rgb(var(--c-ink-faint) / 0.10)'
+      ? 'rgb(var(--c-warning) / 0.16)'
       : `rgb(var(--c-${positive ? 'success' : 'danger'}) / ${intensity})`
 
   return (
@@ -176,15 +177,12 @@ function DayCell({ cell, maxAbs, selected, onSelect }) {
 
       {active && (
         <div className="mt-auto">
-          <div
-            className={`tnum text-sm font-bold leading-tight sm:text-base ${
-              positive ? 'text-success' : flat ? 'text-ink-soft' : 'text-danger'
-            }`}
-          >
+          <div className={`tnum text-sm font-bold leading-tight sm:text-base ${pnlText(netPnl)}`}>
             {compactMoney(netPnl)}
           </div>
           <div className="mt-0.5 text-[10px] leading-tight text-ink-faint">
             {trades.length} {trades.length === 1 ? 'trade' : 'trades'}
+            {flats > 0 && <span className="text-warning"> · {flats} BE</span>}
             {trades.length > 1 && ` · ${percent((wins / trades.length) * 100, { decimals: 0 })}`}
           </div>
         </div>

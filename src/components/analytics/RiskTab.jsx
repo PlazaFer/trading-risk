@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { ShieldAlert, TriangleAlert } from 'lucide-react'
 
 import { computeRuleBreaks, computeStats, groupPerformance } from '../../lib/calc.js'
-import { money, num, percent, pnl } from '../../lib/format.js'
+import { money, num, percent, pnl, pnlSoft, pnlText } from '../../lib/format.js'
 
 import PerformanceList from '../charts/PerformanceList.jsx'
 import { Callout, Headline, Metric, Panel, SectionTitle } from './primitives.jsx'
@@ -154,7 +154,7 @@ export default function RiskTab({ trades, stats, account, settings }) {
         <Callout tone="warning" title="Sobredimensionamiento:">
           {overLimit.length} {overLimit.length === 1 ? 'trade superó' : 'trades superaron'} tu límite
           del {percent(settings.riskPerTradePct)}. Entre todos suman{' '}
-          <strong className={overLimit.reduce((s, t) => s + t.net_pnl, 0) >= 0 ? 'text-success' : 'text-danger'}>
+          <strong className={pnlText(overLimit.reduce((s, t) => s + t.net_pnl, 0))}>
             {pnl(overLimit.reduce((s, t) => s + t.net_pnl, 0))}
           </strong>
           . Que hayan salido bien no los hace correctos: el tamaño se juzga antes de conocer el
@@ -197,7 +197,7 @@ export default function RiskTab({ trades, stats, account, settings }) {
                   </span>
                   <span
                     className={`tnum ml-auto text-xs font-semibold ${
-                      b.netPnl >= 0 ? 'text-success' : 'text-danger'
+                      pnlText(b.netPnl)
                     }`}
                   >
                     {pnl(b.netPnl)}
@@ -232,11 +232,11 @@ export default function RiskTab({ trades, stats, account, settings }) {
               {discipline.followedCount > 0 && discipline.brokeCount > 0 && (
                 <p className="mt-3 text-xs leading-relaxed text-ink-soft">
                   Los trades donde respetaste el plan promediaron{' '}
-                  <strong className={discipline.followed.avgTrade >= 0 ? 'text-success' : 'text-danger'}>
+                  <strong className={pnlText(discipline.followed.avgTrade)}>
                     {pnl(discipline.followed.avgTrade)}
                   </strong>{' '}
                   contra{' '}
-                  <strong className={discipline.broke.avgTrade >= 0 ? 'text-success' : 'text-danger'}>
+                  <strong className={pnlText(discipline.broke.avgTrade)}>
                     {pnl(discipline.broke.avgTrade)}
                   </strong>{' '}
                   cuando improvisaste.
@@ -320,7 +320,7 @@ function DisciplineCard({ label, stats, count, tone }) {
       <p className="text-[11px] font-medium text-ink-soft">{label}</p>
       <p
         className={`tnum mt-1 font-display text-lg font-bold ${
-          stats.netPnl >= 0 ? 'text-success' : 'text-danger'
+          pnlText(stats.netPnl)
         }`}
       >
         {count ? pnl(stats.netPnl) : '—'}

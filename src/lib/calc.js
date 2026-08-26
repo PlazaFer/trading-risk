@@ -23,7 +23,16 @@ export const DIRECTIONS = ['Long', 'Short']
 export const OUTCOMES = {
   win: { id: 'win', label: 'Ganador', tone: 'success' },
   loss: { id: 'loss', label: 'Perdedor', tone: 'danger' },
-  breakeven: { id: 'breakeven', label: 'Breakeven', tone: 'ink-soft' },
+  breakeven: { id: 'breakeven', label: 'Breakeven', tone: 'warning' },
+}
+
+/**
+ * What a net result is. Zero is breakeven — a trade that happened and gave
+ * nothing back — never a win by rounding and never an absence.
+ */
+export function outcomeOf(netPnl) {
+  const n = Number(netPnl) || 0
+  return n > 0 ? 'win' : n < 0 ? 'loss' : 'breakeven'
 }
 
 /**
@@ -151,7 +160,7 @@ export function deriveTrade(input, settings = {}) {
     plannedRR = rrRatio
   }
 
-  const outcome = netPnl > 0 ? 'win' : netPnl < 0 ? 'loss' : 'breakeven'
+  const outcome = outcomeOf(netPnl)
   const entryAt = input.entry_at || null
   const exitAt = input.exit_at || null
 
@@ -296,6 +305,7 @@ const EMPTY_STATS = {
   tradingDays: 0,
   greenDays: 0,
   redDays: 0,
+  flatDays: 0,
   dayWinRate: 0,
   bestDay: null,
   worstDay: null,
@@ -625,6 +635,7 @@ function computeDailyBreakdown(ordered) {
       tradingDays: 0,
       greenDays: 0,
       redDays: 0,
+      flatDays: 0,
       dayWinRate: 0,
       bestDay: null,
       worstDay: null,
@@ -635,6 +646,7 @@ function computeDailyBreakdown(ordered) {
 
   const green = days.filter((d) => d.netPnl > 0).length
   const red = days.filter((d) => d.netPnl < 0).length
+  const flat = days.length - green - red
   const total = days.reduce((s, d) => s + d.netPnl, 0)
   const sorted = [...days].sort((a, b) => b.netPnl - a.netPnl)
 
@@ -642,6 +654,7 @@ function computeDailyBreakdown(ordered) {
     tradingDays: days.length,
     greenDays: green,
     redDays: red,
+    flatDays: flat,
     dayWinRate: (green / days.length) * 100,
     bestDay: sorted[0],
     worstDay: sorted[sorted.length - 1],
@@ -696,10 +709,13 @@ export function buildDailySeries(trades) {
   const byDay = new Map()
   for (const t of chronological(trades)) {
     if (!t.day) continue
-    const b = byDay.get(t.day) || { day: t.day, netPnl: 0, count: 0, wins: 0 }
+    const b = byDay.get(t.day) || { day: t.day, netPnl: 0, count: 0, wins: 0, losses: 0, breakeven: 0 }
     b.netPnl += Number(t.net_pnl) || 0
     b.count += 1
-    if (Number(t.net_pnl) > 0) b.wins += 1
+    // Bucketed by outcome rather than counting wins and calling the rest
+    // losses: that arithmetic files every breakeven trade under "perdedor".
+    const outcome = outcomeOf(t.net_pnl)
+    b[outcome === 'win' ? 'wins' : outcome === 'loss' ? 'losses' : 'breakeven'] += 1
     byDay.set(t.day, b)
   }
 

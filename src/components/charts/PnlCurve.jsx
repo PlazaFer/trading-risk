@@ -10,7 +10,7 @@ import {
 } from 'recharts'
 
 import useChartTheme from '../../hooks/useChartTheme.js'
-import { compactMoney, money, percent, pnl } from '../../lib/format.js'
+import { compactMoney, money, percent, pnl, pnlText } from '../../lib/format.js'
 import ChartTooltip from './ChartTooltip.jsx'
 
 /**
@@ -81,12 +81,12 @@ export default function PnlCurve({ data = [], startingBalance = 0, height = 300 
               {
                 label: d.trade ? 'Resultado' : 'Resultado del período',
                 value: pnl(d.pnl),
-                className: d.pnl >= 0 ? 'text-success' : 'text-danger',
+                className: pnlText(d.pnl),
               },
               {
                 label: 'Acumulado',
                 value: pnl(d.cumulative),
-                className: d.cumulative >= 0 ? 'text-success' : 'text-danger',
+                className: pnlText(d.cumulative),
               },
               { label: 'Balance', value: money(d.equity) },
             ]

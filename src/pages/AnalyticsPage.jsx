@@ -5,7 +5,7 @@ import { useJournal } from '../context/JournalContext.jsx'
 import { buildDailySeries, computeStats } from '../lib/calc.js'
 import { filterByPeriod, describeRange } from '../lib/periods.js'
 import { exportDailyCsv } from '../lib/exporter.js'
-import { percent, pnl, profitFactor } from '../lib/format.js'
+import { percent, pnl, pnlText, profitFactor } from '../lib/format.js'
 import { SESSIONS, sessionLabel } from '../lib/time.js'
 
 import PeriodPicker from '../components/ui/PeriodPicker.jsx'
@@ -145,7 +145,7 @@ export default function AnalyticsPage() {
           <p className="text-sm text-ink-soft">
             {stats.count} {stats.count === 1 ? 'trade' : 'trades'} en {stats.tradingDays}{' '}
             {stats.tradingDays === 1 ? 'día' : 'días'} ·{' '}
-            <span className={stats.netPnl >= 0 ? 'text-success' : 'text-danger'}>
+            <span className={pnlText(stats.netPnl)}>
               {pnl(stats.netPnl)}
             </span>{' '}
             · {percent(stats.winRate, { decimals: 0 })} WR · PF{' '}

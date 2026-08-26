@@ -11,7 +11,7 @@ export default function WinRateBar({ wins = 0, losses = 0, breakeven = 0, showLe
     <div>
       <div className="flex h-2 overflow-hidden rounded-full bg-bg-sub">
         {wins > 0 && <div className="bg-success" style={{ width: `${pct(wins)}%` }} />}
-        {breakeven > 0 && <div className="bg-ink-faint/50" style={{ width: `${pct(breakeven)}%` }} />}
+        {breakeven > 0 && <div className="bg-warning" style={{ width: `${pct(breakeven)}%` }} />}
         {losses > 0 && <div className="bg-danger" style={{ width: `${pct(losses)}%` }} />}
       </div>
 
@@ -24,8 +24,9 @@ export default function WinRateBar({ wins = 0, losses = 0, breakeven = 0, showLe
           </span>
           {breakeven > 0 && (
             <span className="flex items-center gap-1.5 text-ink-soft">
-              <span className="h-2 w-2 rounded-full bg-ink-faint/50" />
+              <span className="h-2 w-2 rounded-full bg-warning" />
               {breakeven} BE
+              <span className="tnum text-ink-faint">{percent(pct(breakeven), { decimals: 0 })}</span>
             </span>
           )}
           <span className="flex items-center gap-1.5 text-ink-soft">

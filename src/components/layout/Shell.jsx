@@ -17,7 +17,7 @@ import { useJournal } from '../../context/JournalContext.jsx'
 import { useUI } from '../../context/UIContext.jsx'
 import { THEMES } from '../../lib/themes.js'
 import { accountKind, kindClasses } from '../../lib/accounts.js'
-import { money, percent } from '../../lib/format.js'
+import { money, percent, pnlText } from '../../lib/format.js'
 import AccountSwitcher from './AccountSwitcher.jsx'
 
 const NAV = [
@@ -65,7 +65,7 @@ export default function Shell() {
             </p>
             <p
               className={`tnum mt-0.5 text-[11px] font-medium ${
-                account.pnl > 0 ? 'text-success' : account.pnl < 0 ? 'text-danger' : 'text-ink-faint'
+                trades.length ? pnlText(account.pnl) : 'text-ink-faint'
               }`}
             >
               {money(account.pnl, { sign: true })}

@@ -7,7 +7,7 @@ import { ArrowLeft, ChevronLeft, ChevronRight, Images, Plus, ShieldAlert } from 
 import { useJournal } from '../context/JournalContext.jsx'
 import { useUI } from '../context/UIContext.jsx'
 import { computeRuleBreaks, computeStats } from '../lib/calc.js'
-import { money, percent, pnl, profitFactor, rMultiple } from '../lib/format.js'
+import { money, percent, pnl, pnlText, profitFactor, rMultiple } from '../lib/format.js'
 import { dateFromKey, keyFromDate } from '../lib/time.js'
 
 import TradeCard from '../components/journal/TradeCard.jsx'
@@ -111,15 +111,18 @@ export default function DayPage() {
           <Summary
             label="P&L del día"
             value={pnl(stats.netPnl)}
-            tone={stats.netPnl > 0 ? 'text-success' : stats.netPnl < 0 ? 'text-danger' : 'text-ink'}
+            tone={pnlText(stats.netPnl)}
           />
-          <Summary label="Trades" value={`${stats.wins}G · ${stats.losses}P`} />
+          <Summary
+            label="Trades"
+            value={`${stats.wins}G · ${stats.losses}P${stats.breakeven ? ` · ${stats.breakeven}BE` : ''}`}
+          />
           <Summary label="Win rate" value={percent(stats.winRate)} />
           <Summary label="Profit factor" value={profitFactor(stats.profitFactor)} />
           <Summary
             label="R total"
             value={stats.totalR ? rMultiple(stats.totalR) : '—'}
-            tone={stats.totalR >= 0 ? 'text-success' : 'text-danger'}
+            tone={pnlText(stats.totalR)}
           />
           <Summary
             label="Riesgo medio"

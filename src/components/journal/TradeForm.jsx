@@ -19,7 +19,15 @@ import {
   getInstrument,
   commissionFor,
 } from '../../lib/instruments.js'
-import { money, num, percent, pnl, points as fmtPoints, rMultiple } from '../../lib/format.js'
+import {
+  money,
+  num,
+  percent,
+  pnl,
+  pnlText,
+  points as fmtPoints,
+  rMultiple,
+} from '../../lib/format.js'
 import {
   utcToZonedInput,
   zonedToUtc,
@@ -177,8 +185,7 @@ export default function TradeForm({ open, onClose, trade = null, defaultDate = n
     onClose()
   }
 
-  const netTone =
-    preview.net_pnl > 0 ? 'text-success' : preview.net_pnl < 0 ? 'text-danger' : 'text-ink-soft'
+  const netTone = pnlText(preview.net_pnl)
 
   const holdMin = durationMinutes(
     form.entry_at ? zonedToUtc(form.entry_at, settings.timezone) : null,
@@ -608,7 +615,7 @@ export default function TradeForm({ open, onClose, trade = null, defaultDate = n
                     <p className="eyebrow">R obtenido</p>
                     <p
                       className={`tnum mt-1 font-display text-2xl font-bold ${
-                        preview.r_multiple >= 0 ? 'text-success' : 'text-danger'
+                        pnlText(preview.r_multiple)
                       }`}
                     >
                       {rMultiple(preview.r_multiple)}

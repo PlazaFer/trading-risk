@@ -16,7 +16,7 @@ import { useJournal } from '../context/JournalContext.jsx'
 import { useUI } from '../context/UIContext.jsx'
 import { computeStats } from '../lib/calc.js'
 import { exportCsv } from '../lib/exporter.js'
-import { money, percent, pnl, profitFactor, rMultiple } from '../lib/format.js'
+import { money, percent, pnl, pnlSoft, pnlText, profitFactor, rMultiple } from '../lib/format.js'
 import { sessionLabel, SESSIONS, zonedTimeLabel } from '../lib/time.js'
 
 import Segmented from '../components/ui/Segmented.jsx'
@@ -303,8 +303,7 @@ export default function TradesPage() {
               </thead>
               <tbody className="divide-y divide-line">
                 {filtered.map((t) => {
-                  const win = t.net_pnl > 0
-                  const loss = t.net_pnl < 0
+                  const breakeven = Number(t.net_pnl) === 0
                   const Icon = t.direction === 'Long' ? ArrowUpRight : ArrowDownRight
 
                   return (
@@ -344,10 +343,7 @@ export default function TradesPage() {
                       <td className="tnum px-3 py-2.5 text-right text-ink-soft">
                         {t.exit_price !== null ? t.exit_price.toFixed(2) : '—'}
                       </td>
-                      <td
-                        className={`tnum px-3 py-2.5 text-right ${
-                          (t.points || 0) >= 0 ? 'text-success/80' : 'text-danger/80'
-                        }`}
+                      <td className={`tnum px-3 py-2.5 text-right ${pnlSoft(t.points)}`}
                       >
                         {t.points !== null && t.points !== undefined
                           ? `${t.points > 0 ? '+' : ''}${t.points.toFixed(2)}`
@@ -363,21 +359,22 @@ export default function TradesPage() {
                           ? percent(t.risk_pct, { decimals: 2 })
                           : '—'}
                       </td>
-                      <td
-                        className={`tnum px-3 py-2.5 text-right font-medium ${
-                          (t.r_multiple ?? 0) >= 0 ? 'text-success/80' : 'text-danger/80'
-                        }`}
-                      >
+                      <td className={`tnum px-3 py-2.5 text-right font-medium ${pnlSoft(t.r_multiple)}`}>
                         {t.r_multiple !== null && t.r_multiple !== undefined
                           ? rMultiple(t.r_multiple)
                           : '—'}
                       </td>
                       <td
-                        className={`tnum whitespace-nowrap px-3 py-2.5 text-right font-semibold ${
-                          win ? 'text-success' : loss ? 'text-danger' : 'text-ink-soft'
-                        }`}
+                        className={`tnum whitespace-nowrap px-3 py-2.5 text-right font-semibold ${pnlText(
+                          t.net_pnl
+                        )}`}
                       >
                         {pnl(t.net_pnl)}
+                        {breakeven && (
+                          <span className="ml-1.5 text-[10px] font-bold uppercase tracking-wide">
+                            BE
+                          </span>
+                        )}
                       </td>
                       <td className="max-w-[14rem] truncate px-3 py-2.5 text-ink-soft">
                         {t.setup || <span className="text-ink-faint">—</span>}
@@ -410,9 +407,7 @@ export default function TradesPage() {
                     {stats.totalR ? rMultiple(stats.totalR) : '—'}
                   </td>
                   <td
-                    className={`tnum px-3 py-2.5 text-right font-bold ${
-                      stats.netPnl >= 0 ? 'text-success' : 'text-danger'
-                    }`}
+                    className={`tnum px-3 py-2.5 text-right font-bold ${pnlText(stats.netPnl)}`}
                   >
                     {pnl(stats.netPnl)}
                   </td>

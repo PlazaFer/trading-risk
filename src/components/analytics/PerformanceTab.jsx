@@ -11,7 +11,7 @@ import {
   hourPerformance,
   weekdayPerformance,
 } from '../../lib/calc.js'
-import { compactMoney, money, num, percent, pnl, profitFactor, rMultiple } from '../../lib/format.js'
+import { compactMoney, money, num, percent, pnl, pnlSoft, pnlText, profitFactor, rMultiple } from '../../lib/format.js'
 import { WEEKDAY_LABELS, formatDuration, sessionLabel } from '../../lib/time.js'
 import { EMOTION_BY_ID } from '../../lib/taxonomy.js'
 
@@ -144,7 +144,7 @@ export default function PerformanceTab({ trades, stats, account }) {
   )
 
   const groupTooltip = (d) => [
-    { label: 'Resultado', value: pnl(d.group.netPnl), className: d.group.netPnl >= 0 ? 'text-success' : 'text-danger' },
+    { label: 'Resultado', value: pnl(d.group.netPnl), className: pnlText(d.group.netPnl) },
     { label: 'Trades', value: `${d.group.wins}G / ${d.group.losses}P` },
     { label: 'Win rate', value: percent(d.group.winRate, { decimals: 0 }) },
     { label: 'R promedio', value: d.group.avgR === null ? '—' : `${d.group.avgR.toFixed(2)}R` },
@@ -159,7 +159,7 @@ export default function PerformanceTab({ trades, stats, account }) {
             <Headline
               label="P&L neto"
               value={pnl(stats.netPnl)}
-              tone={stats.netPnl >= 0 ? 'text-success' : 'text-danger'}
+              tone={pnlText(stats.netPnl)}
               delta={
                 account.startingBalance > 0 ? (
                   <Delta value={stats.returnPct} format={(v) => percent(v)} />
@@ -196,7 +196,7 @@ export default function PerformanceTab({ trades, stats, account }) {
             <Headline
               label="R acumulado"
               value={stats.tradesWithR ? rMultiple(stats.totalR) : '—'}
-              tone={stats.totalR >= 0 ? 'text-success' : 'text-danger'}
+              tone={pnlText(stats.totalR)}
               sub={`${stats.tradesWithR} trades con riesgo definido`}
               hint="Suma de todos los R-múltiplos. Mide el rendimiento en unidades de riesgo, independiente del tamaño de posición."
             />
@@ -249,7 +249,7 @@ export default function PerformanceTab({ trades, stats, account }) {
           maxLabel="Máximo"
           maxValue={stats.maxR}
           series={rSeries}
-          color={stats.avgR >= 0 ? c.success : c.danger}
+          color={stats.avgR > 0 ? c.success : stats.avgR < 0 ? c.danger : c.warning}
           footer={
             stats.tradesWithR
               ? `${stats.tradesWithR} de ${stats.count} trades tienen riesgo definido`
@@ -339,7 +339,7 @@ export default function PerformanceTab({ trades, stats, account }) {
         >
           <p
             className={`tnum font-display text-3xl font-bold leading-none ${
-              stats.expectancy >= 0 ? 'text-success' : 'text-danger'
+              pnlText(stats.expectancy)
             }`}
           >
             {pnl(stats.expectancy)}
@@ -907,10 +907,10 @@ function FullMetrics({ stats }) {
 
       {open && (
         <div className="mt-5 grid gap-x-8 gap-y-3 border-t border-line pt-5 sm:grid-cols-2 lg:grid-cols-4">
-          <Metric label="P&L neto" value={pnl(stats.netPnl)} tone={stats.netPnl >= 0 ? 'text-success' : 'text-danger'} />
+          <Metric label="P&L neto" value={pnl(stats.netPnl)} tone={pnlText(stats.netPnl)} />
           <Metric label="P&L bruto" value={pnl(stats.netPnl + stats.commissions)} />
           <Metric label="Comisiones" value={money(-stats.commissions)} tone="text-warning" />
-          <Metric label="Retorno sobre capital" value={percent(stats.returnPct, { sign: true })} tone={stats.returnPct >= 0 ? 'text-success' : 'text-danger'} />
+          <Metric label="Retorno sobre capital" value={percent(stats.returnPct, { sign: true })} tone={pnlText(stats.returnPct)} />
 
           <Metric label="Trades" value={stats.count} />
           <Metric label="Ganadores" value={`${stats.wins} (${percent(stats.winRate, { decimals: 0 })})`} tone="text-success" />
@@ -918,7 +918,7 @@ function FullMetrics({ stats }) {
           <Metric label="Breakeven" value={stats.breakeven} />
 
           <Metric label="Profit factor" value={profitFactor(stats.profitFactor)} />
-          <Metric label="Expectativa" value={pnl(stats.expectancy)} tone={stats.expectancy >= 0 ? 'text-success' : 'text-danger'} />
+          <Metric label="Expectativa" value={pnl(stats.expectancy)} tone={pnlText(stats.expectancy)} />
           <Metric label="R promedio" value={rMultiple(stats.expectancyR)} />
           <Metric label="R acumulado" value={rMultiple(stats.totalR)} />
 

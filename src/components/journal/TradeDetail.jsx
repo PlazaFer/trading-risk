@@ -9,7 +9,15 @@ import {
 import toast from 'react-hot-toast'
 
 import { useJournal } from '../../context/JournalContext.jsx'
-import { money, num, percent, pnl, points as fmtPoints, rMultiple } from '../../lib/format.js'
+import {
+  money,
+  num,
+  percent,
+  pnl,
+  pnlText,
+  points as fmtPoints,
+  rMultiple,
+} from '../../lib/format.js'
 import { formatDuration, sessionLabel, zonedTimeLabel, zonedDateKey } from '../../lib/time.js'
 import { EMOTION_BY_ID } from '../../lib/taxonomy.js'
 import { getInstrument } from '../../lib/instruments.js'
@@ -33,8 +41,7 @@ export default function TradeDetail({ trade, open, onClose, onEdit }) {
 
   if (!trade) return null
 
-  const win = trade.net_pnl > 0
-  const loss = trade.net_pnl < 0
+  const breakeven = Number(trade.net_pnl) === 0
   const Icon = trade.direction === 'Long' ? ArrowUpRight : ArrowDownRight
   const spec = getInstrument(trade.symbol)
   const tz = settings.timezone
@@ -102,24 +109,21 @@ export default function TradeDetail({ trade, open, onClose, onEdit }) {
           <div className="flex flex-wrap items-end justify-between gap-4 rounded-xl border border-line bg-bg-sub p-4">
             <div>
               <p className="eyebrow">Resultado neto</p>
-              <p
-                className={`tnum mt-1 font-display text-4xl font-bold ${
-                  win ? 'text-success' : loss ? 'text-danger' : 'text-ink-soft'
-                }`}
-              >
-                {pnl(trade.net_pnl)}
-              </p>
+              <div className="mt-1 flex items-center gap-2.5">
+                <p className={`tnum font-display text-4xl font-bold ${pnlText(trade.net_pnl)}`}>
+                  {pnl(trade.net_pnl)}
+                </p>
+                {breakeven && (
+                  <span className="chip bg-warning/12 text-warning">Breakeven</span>
+                )}
+              </div>
             </div>
 
             <div className="flex gap-6">
               {trade.r_multiple !== null && trade.r_multiple !== undefined && (
                 <div className="text-right">
                   <p className="eyebrow">R obtenido</p>
-                  <p
-                    className={`tnum mt-1 font-display text-2xl font-bold ${
-                      trade.r_multiple >= 0 ? 'text-success' : 'text-danger'
-                    }`}
-                  >
+                  <p className={`tnum mt-1 font-display text-2xl font-bold ${pnlText(trade.r_multiple)}`}>
                     {rMultiple(trade.r_multiple)}
                   </p>
                 </div>
