@@ -13,6 +13,10 @@ const SIZES = {
 /**
  * Modal with the three behaviors people notice only when missing:
  * Escape closes, the page behind stops scrolling, and focus moves inside.
+ *
+ * `closeOnBackdrop` / `closeOnEscape` turn the two accidental exits off. A
+ * dialog holding half an hour of typing should only close when you say so —
+ * a stray click beside the panel is not saying so.
  */
 export default function Modal({
   open = true,
@@ -23,6 +27,7 @@ export default function Modal({
   children,
   footer,
   closeOnBackdrop = true,
+  closeOnEscape = true,
 }) {
   const panelRef = useRef(null)
 
@@ -30,7 +35,7 @@ export default function Modal({
     if (!open) return undefined
 
     const onKey = (e) => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && closeOnEscape) {
         e.stopPropagation()
         onClose?.()
       }
@@ -49,7 +54,7 @@ export default function Modal({
       document.body.style.overflow = overflow
       document.body.style.paddingRight = paddingRight
     }
-  }, [open, onClose])
+  }, [open, onClose, closeOnEscape])
 
   if (!open) return null
 

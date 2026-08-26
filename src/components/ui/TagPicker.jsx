@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Check, Plus, X } from 'lucide-react'
 
 /**
@@ -19,6 +19,7 @@ export default function TagPicker({
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
   const inputRef = useRef(null)
+  const boxRef = useRef(null)
 
   const selected = value || []
   const atMax = max ? selected.length >= max : false
@@ -41,17 +42,47 @@ export default function TagPicker({
     accent: 'bg-accent/12 text-accent border-accent/25',
   }[tone]
 
+  /**
+   * The list closes itself. Creating a value on a single-pick field (a setup)
+   * disables the input, and a disabled input never blurs — so relying on blur
+   * alone left the panel pinned open over the rest of the form with no way to
+   * dismiss it. Outside clicks and Escape close it too, from any state.
+   */
+  useEffect(() => {
+    if (!open) return undefined
+    const onDown = (e) => {
+      if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false)
+    }
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return
+      // Capture phase + stop: Escape dismisses this list before the modal
+      // behind it decides the whole form should close.
+      e.stopPropagation()
+      setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey, true)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey, true)
+    }
+  }, [open])
+
   const add = (item) => {
     if (!item || atMax) return
-    onChange([...selected, item])
+    const next = [...selected, item]
+    onChange(next)
     setQuery('')
-    inputRef.current?.focus()
+    // A field that just filled up has nothing left to offer; keeping focus
+    // would only re-open an empty list over the fields underneath.
+    if (max && next.length >= max) setOpen(false)
+    else inputRef.current?.focus()
   }
 
   const removeItem = (item) => onChange(selected.filter((v) => v !== item))
 
   return (
-    <div className="space-y-2">
+    <div ref={boxRef} className="space-y-2">
       {selected.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {selected.map((item) => (
@@ -81,7 +112,6 @@ export default function TagPicker({
           disabled={atMax}
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => setOpen(true)}
-          onBlur={() => setTimeout(() => setOpen(false), 150)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
               e.preventDefault()
@@ -96,7 +126,7 @@ export default function TagPicker({
           className="field text-[13px]"
         />
 
-        {open && (filtered.length > 0 || canCreate) && (
+        {open && !atMax && (filtered.length > 0 || canCreate) && (
           <div className="absolute z-30 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-line bg-bg-card p-1 shadow-pop animate-scale-in">
             {canCreate && (
               <button

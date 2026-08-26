@@ -114,8 +114,6 @@ export const ACCOUNT_SETTINGS = {
 
   defaultSymbol: 'MNQ',
   defaultContracts: 1,
-  // 'prices' derives P&L from fills; 'manual' takes the net from the broker.
-  defaultPnlMode: 'prices',
   defaultRR: 2,
 
   // Fallback dollar risk used for R-multiples when a trade has no stop

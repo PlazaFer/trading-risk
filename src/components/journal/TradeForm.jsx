@@ -65,7 +65,11 @@ function blankTrade(settings, defaultDate) {
     symbol: settings.defaultSymbol || 'MNQ',
     direction: 'Long',
     contracts: settings.defaultContracts || 1,
-    pnl_mode: settings.defaultPnlMode || 'prices',
+    // Always "por precios": the mode that records what actually happened at
+    // the broker. Manual is one click away, and switching to it offers the
+    // default R:R — but a form that opens pre-committed to a hand-typed net
+    // quietly loses entry, exit, stop and target on every trade.
+    pnl_mode: 'prices',
     entry_price: '',
     exit_price: '',
     stop_price: '',
@@ -73,7 +77,7 @@ function blankTrade(settings, defaultDate) {
     net_pnl: '',
     // The ratio belongs to manual entry; in price mode the stop and target
     // define it, and pre-filling would fight them.
-    rr_ratio: settings.defaultPnlMode === 'manual' ? (settings.defaultRR ?? '') : '',
+    rr_ratio: '',
     manual_risk: '',
     commission: '',
     entry_at: defaultDate ? `${defaultDate}T09:30` : nowInput(settings.timezone),
@@ -202,6 +206,12 @@ export default function TradeForm({ open, onClose, trade = null, defaultDate = n
       open={open}
       onClose={onClose}
       size="xl"
+      // A trade form is fifteen fields, notes and screenshots. Losing it to a
+      // misplaced click beside the panel — or to an Escape aimed at a
+      // dropdown — is not a risk worth the convenience: only the ✕ and
+      // «Cancelar» close it.
+      closeOnBackdrop={false}
+      closeOnEscape={false}
       title={trade ? 'Editar trade' : 'Nuevo trade'}
       subtitle={
         trade

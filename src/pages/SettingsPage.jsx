@@ -370,22 +370,8 @@ export default function SettingsPage() {
           </Field>
 
           <Field
-            label="Modo de carga por defecto"
-            hint="«P&L manual» abre el formulario listo para pegar el neto del bróker junto al R:R utilizado. «Por precios» calcula todo desde la entrada y la salida."
-          >
-            <select
-              value={settings.defaultPnlMode || 'prices'}
-              onChange={(e) => updateSettings({ defaultPnlMode: e.target.value })}
-              className="field-select"
-            >
-              <option value="prices">Por precios de entrada y salida</option>
-              <option value="manual">P&L manual + R:R</option>
-            </select>
-          </Field>
-
-          <Field
             label="R:R por defecto"
-            hint="Se precarga en cada trade nuevo para que no tengas que tipearlo si casi siempre usás la misma relación."
+            hint="Se precarga al pasar un trade a «P&L manual», para que no tengas que tipearlo si casi siempre usás la misma relación."
           >
             <div className="flex items-center gap-2">
               <span className="tnum shrink-0 text-sm text-ink-faint">1 :</span>

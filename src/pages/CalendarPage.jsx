@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { addMonths, format, isSameMonth, startOfMonth, subMonths } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -8,7 +8,7 @@ import { useJournal } from '../context/JournalContext.jsx'
 import { useUI } from '../context/UIContext.jsx'
 import { computeStats } from '../lib/calc.js'
 import { money, percent, pnl, pnlText, profitFactor } from '../lib/format.js'
-import { keyFromDate } from '../lib/time.js'
+import { dateFromKey, keyFromDate } from '../lib/time.js'
 
 import CalendarMonth from '../components/journal/CalendarMonth.jsx'
 import EquityCurve from '../components/charts/EquityCurve.jsx'
@@ -18,10 +18,44 @@ import EquityCurve from '../components/charts/EquityCurve.jsx'
  * of navigating a journal, since traders think in days, not in row numbers.
  */
 export default function CalendarPage() {
-  const { trades, tradesByDay, dayNotes, account } = useJournal()
+  const { trades, tradesByDay, dayNotes, account, activeAccountId, isLoading } = useJournal()
   const { newTrade } = useUI()
   const navigate = useNavigate()
   const [month, setMonth] = useState(() => startOfMonth(new Date()))
+
+  /** The month of the most recent trade in this account, if there is one. */
+  const lastTradeMonth = useMemo(() => {
+    let latest = null
+    for (const t of trades) {
+      if (t.day && (!latest || t.day > latest)) latest = t.day
+    }
+    const date = latest ? dateFromKey(latest) : null
+    return date ? startOfMonth(date) : null
+  }, [trades])
+
+  /**
+   * Where the calendar opens.
+   *
+   * A live account is journalled as it happens, so today is where the work is.
+   * A backtest is not: you sit down in August to replay April 2025, and
+   * landing on an empty current month reads as "my trades are gone". So a
+   * backtest opens on its last month with trades instead.
+   */
+  const homeMonth = useMemo(
+    () => (account.kind === 'backtest' && lastTradeMonth ? lastTradeMonth : startOfMonth(new Date())),
+    [account.kind, lastTradeMonth]
+  )
+
+  // Snap to the home month once per account — after its journal has loaded, so
+  // a backtest is anchored against real trades rather than an empty list. From
+  // then on the arrows win: browsing away must not be undone on every render.
+  const anchoredAccount = useRef(null)
+  useEffect(() => {
+    if (isLoading || !activeAccountId) return
+    if (anchoredAccount.current === activeAccountId) return
+    anchoredAccount.current = activeAccountId
+    setMonth(homeMonth)
+  }, [activeAccountId, isLoading, homeMonth])
 
   const dayNoteMap = useMemo(() => {
     const map = new Map()
@@ -39,7 +73,8 @@ export default function CalendarPage() {
     [monthTrades, account.startingBalance]
   )
 
-  const atCurrentMonth = isSameMonth(month, new Date())
+  const atHomeMonth = isSameMonth(month, homeMonth)
+  const homeLabel = isSameMonth(homeMonth, new Date()) ? 'Hoy' : 'Último mes con trades'
 
   return (
     <div className="space-y-5">
@@ -65,17 +100,14 @@ export default function CalendarPage() {
             <ChevronRight className="h-4 w-4" />
           </button>
 
-          {!atCurrentMonth && (
-            <button
-              onClick={() => setMonth(startOfMonth(new Date()))}
-              className="btn-ghost btn-sm"
-            >
-              Hoy
+          {!atHomeMonth && (
+            <button onClick={() => setMonth(homeMonth)} className="btn-ghost btn-sm">
+              {homeLabel}
             </button>
           )}
         </div>
 
-        <button onClick={() => newTrade(keyFromDate(new Date()))} className="btn-primary btn-sm">
+        <button onClick={() => newTrade(keyFromDate(defaultNewTradeDay(month)))} className="btn-primary btn-sm">
           <Plus className="h-3.5 w-3.5" />
           Nuevo trade
         </button>
@@ -130,6 +162,16 @@ export default function CalendarPage() {
       )}
     </div>
   )
+}
+
+/**
+ * The date a trade added from this screen starts on: today while you are
+ * looking at the current month, otherwise the 1st of the month on screen —
+ * which is what you mean when you add a trade while replaying April 2025.
+ */
+function defaultNewTradeDay(month) {
+  const today = new Date()
+  return isSameMonth(month, today) ? today : month
 }
 
 function Summary({ label, value, tone = 'text-ink' }) {
