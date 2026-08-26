@@ -60,7 +60,20 @@ function nowInput(timezone) {
   return utcToZonedInput(new Date(), timezone)
 }
 
-function blankTrade(settings, defaultDate) {
+/**
+ * The date a brand-new trade starts on when the caller did not name one.
+ *
+ * `anchor` is the account's reference day: today for a live journal, the last
+ * day actually traded for a backtest. Seeding a backtest entry with the real
+ * clock would put every replayed trade a year into the future until the
+ * trader noticed and retyped the date.
+ */
+function defaultEntryAt(settings, defaultDate, anchor) {
+  const day = defaultDate || anchor
+  return day ? `${day}T09:30` : nowInput(settings.timezone)
+}
+
+function blankTrade(settings, defaultDate, anchor) {
   return {
     symbol: settings.defaultSymbol || 'MNQ',
     direction: 'Long',
@@ -80,7 +93,7 @@ function blankTrade(settings, defaultDate) {
     rr_ratio: '',
     manual_risk: '',
     commission: '',
-    entry_at: defaultDate ? `${defaultDate}T09:30` : nowInput(settings.timezone),
+    entry_at: defaultEntryAt(settings, defaultDate, anchor),
     exit_at: '',
     setup: '',
     tags: [],
@@ -102,8 +115,8 @@ function blankTrade(settings, defaultDate) {
  * price is still cheap to catch.
  */
 export default function TradeForm({ open, onClose, trade = null, defaultDate = null }) {
-  const { settings, createTrade, editTrade, removeTrade, vocabulary } = useJournal()
-  const [form, setForm] = useState(() => blankTrade(settings, defaultDate))
+  const { settings, createTrade, editTrade, removeTrade, vocabulary, periodAnchor } = useJournal()
+  const [form, setForm] = useState(() => blankTrade(settings, defaultDate, periodAnchor))
   const [submitting, setSubmitting] = useState(false)
   const commissionTouched = useRef(false)
 
@@ -131,10 +144,10 @@ export default function TradeForm({ open, onClose, trade = null, defaultDate = n
         followed_plan: trade.followed_plan ?? null,
       })
     } else {
-      setForm(blankTrade(settings, defaultDate))
+      setForm(blankTrade(settings, defaultDate, periodAnchor))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, trade, defaultDate])
+  }, [open, trade, defaultDate, periodAnchor])
 
   const set = (patch) => setForm((prev) => ({ ...prev, ...patch }))
 

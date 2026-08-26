@@ -18,32 +18,20 @@ import EquityCurve from '../components/charts/EquityCurve.jsx'
  * of navigating a journal, since traders think in days, not in row numbers.
  */
 export default function CalendarPage() {
-  const { trades, tradesByDay, dayNotes, account, activeAccountId, isLoading } = useJournal()
+  const { trades, tradesByDay, dayNotes, account, periodAnchor, activeAccountId, isLoading } =
+    useJournal()
   const { newTrade } = useUI()
   const navigate = useNavigate()
   const [month, setMonth] = useState(() => startOfMonth(new Date()))
 
-  /** The month of the most recent trade in this account, if there is one. */
-  const lastTradeMonth = useMemo(() => {
-    let latest = null
-    for (const t of trades) {
-      if (t.day && (!latest || t.day > latest)) latest = t.day
-    }
-    const date = latest ? dateFromKey(latest) : null
-    return date ? startOfMonth(date) : null
-  }, [trades])
-
   /**
-   * Where the calendar opens.
-   *
-   * A live account is journalled as it happens, so today is where the work is.
-   * A backtest is not: you sit down in August to replay April 2025, and
-   * landing on an empty current month reads as "my trades are gone". So a
-   * backtest opens on its last month with trades instead.
+   * Where the calendar opens: the month holding this account's reference day.
+   * For a live account that is today; for a backtest, `periodAnchor` puts it
+   * on the last month actually traded instead of an empty current month.
    */
   const homeMonth = useMemo(
-    () => (account.kind === 'backtest' && lastTradeMonth ? lastTradeMonth : startOfMonth(new Date())),
-    [account.kind, lastTradeMonth]
+    () => startOfMonth((periodAnchor && dateFromKey(periodAnchor)) || new Date()),
+    [periodAnchor]
   )
 
   // Snap to the home month once per account — after its journal has loaded, so
@@ -74,7 +62,7 @@ export default function CalendarPage() {
   )
 
   const atHomeMonth = isSameMonth(month, homeMonth)
-  const homeLabel = isSameMonth(homeMonth, new Date()) ? 'Hoy' : 'Último mes con trades'
+  const homeLabel = periodAnchor ? 'Último mes con trades' : 'Hoy'
 
   return (
     <div className="space-y-5">
@@ -107,7 +95,10 @@ export default function CalendarPage() {
           )}
         </div>
 
-        <button onClick={() => newTrade(keyFromDate(defaultNewTradeDay(month)))} className="btn-primary btn-sm">
+        <button
+          onClick={() => newTrade(keyFromDate(defaultNewTradeDay(month, homeMonth)))}
+          className="btn-primary btn-sm"
+        >
           <Plus className="h-3.5 w-3.5" />
           Nuevo trade
         </button>
@@ -165,13 +156,13 @@ export default function CalendarPage() {
 }
 
 /**
- * The date a trade added from this screen starts on: today while you are
- * looking at the current month, otherwise the 1st of the month on screen —
- * which is what you mean when you add a trade while replaying April 2025.
+ * The date a trade added from this screen starts on: the account's reference
+ * day while you are looking at its own month, otherwise the 1st of whatever
+ * month is on screen — which is what you mean when you add a trade while
+ * replaying April 2025.
  */
-function defaultNewTradeDay(month) {
-  const today = new Date()
-  return isSameMonth(month, today) ? today : month
+function defaultNewTradeDay(month, homeMonth) {
+  return isSameMonth(month, homeMonth) ? homeMonth : month
 }
 
 function Summary({ label, value, tone = 'text-ink' }) {

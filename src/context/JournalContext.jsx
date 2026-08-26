@@ -594,6 +594,26 @@ export function JournalProvider({ children }) {
     return map
   }, [trades])
 
+  /**
+   * The day the app should treat as "now" for this account.
+   *
+   * A live journal is written as it happens, so today is where the work is.
+   * A backtest is not: its trades sit months in the past, and every
+   * today-relative default — the calendar's month, the dashboard's period,
+   * the date on a new trade — lands on an empty stretch of calendar and reads
+   * as "my trades are gone". For those accounts the reference day becomes the
+   * journal's own last trading day; `null` everywhere else means "use today",
+   * which is what every consumer falls back to.
+   */
+  const periodAnchor = useMemo(() => {
+    if (settings.accountKind !== 'backtest') return null
+    let latest = null
+    for (const t of trades) {
+      if (t.day && (!latest || t.day > latest)) latest = t.day
+    }
+    return latest
+  }, [trades, settings.accountKind])
+
   const netCashFlow = useMemo(
     () =>
       cashFlows.reduce(
@@ -673,6 +693,7 @@ export function JournalProvider({ children }) {
 
       trades,
       tradesByDay,
+      periodAnchor,
       isLoading,
       loadError,
       refresh,
@@ -700,7 +721,7 @@ export function JournalProvider({ children }) {
       accounts, activeAccount, activeAccountId, accountSummaries,
       switchAccount, createAccount, updateAccount, removeAccount,
       clearAccountData, refreshAccountSummaries,
-      trades, tradesByDay, isLoading, loadError, refresh,
+      trades, tradesByDay, periodAnchor, isLoading, loadError, refresh,
       createTrade, editTrade, removeTrade, recalculateAll,
       dayNotes, getDayNote, upsertDayNote, removeDayNote,
       cashFlows, addCashFlow, removeCashFlow,

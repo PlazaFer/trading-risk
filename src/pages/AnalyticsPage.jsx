@@ -42,7 +42,7 @@ const OUTCOME_LABELS = { win: 'Ganadores', loss: 'Perdedores', breakeven: 'Break
  * switch back to performance.
  */
 export default function AnalyticsPage() {
-  const { trades, account, settings } = useJournal()
+  const { trades, account, settings, periodAnchor } = useJournal()
 
   const [tab, setTab] = useState('performance')
   const [period, setPeriod] = useState('all')
@@ -50,8 +50,8 @@ export default function AnalyticsPage() {
   const [filters, setFilters] = useState(EMPTY_FILTERS)
 
   const inPeriod = useMemo(
-    () => filterByPeriod(trades, period, customRange),
-    [trades, period, customRange]
+    () => filterByPeriod(trades, period, customRange, periodAnchor),
+    [trades, period, customRange, periodAnchor]
   )
 
   /**
@@ -150,7 +150,7 @@ export default function AnalyticsPage() {
             </span>{' '}
             · {percent(stats.winRate, { decimals: 0 })} WR · PF{' '}
             {profitFactor(stats.profitFactor)} ·{' '}
-            <span className="text-ink-faint">{describeRange(period, customRange)}</span>
+            <span className="text-ink-faint">{describeRange(period, customRange, periodAnchor)}</span>
           </p>
         </div>
 
@@ -160,6 +160,7 @@ export default function AnalyticsPage() {
             onChange={setPeriod}
             custom={customRange}
             onCustomChange={setCustomRange}
+            anchor={periodAnchor}
           />
           <button
             onClick={() => exportDailyCsv(daily, account)}

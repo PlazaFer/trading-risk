@@ -1,6 +1,6 @@
-import { CalendarRange, X } from 'lucide-react'
+import { CalendarRange, History, X } from 'lucide-react'
 
-import { PERIODS, describeRange } from '../../lib/periods.js'
+import { PERIODS, describeRange, periodLabel } from '../../lib/periods.js'
 
 /**
  * Period selector shared by the Dashboard and Analytics.
@@ -9,8 +9,20 @@ import { PERIODS, describeRange } from '../../lib/periods.js'
  * range covers the specific ones ("how did I do the two weeks after I changed
  * my stop rule?"). Choosing custom reveals the date inputs inline rather than
  * behind a menu, because a range you cannot see is a range you will misread.
+ *
+ * `anchor` moves the presets off today and onto a journal's own last trading
+ * day — a backtest replaying April 2025 has no "este mes". The labels change
+ * with it, and a line underneath says which day the presets are counting back
+ * from, so nobody has to guess what "30 días" measured from.
  */
-export default function PeriodPicker({ value, onChange, custom, onCustomChange, className = '' }) {
+export default function PeriodPicker({
+  value,
+  onChange,
+  custom,
+  onCustomChange,
+  anchor = null,
+  className = '',
+}) {
   const isCustom = value === 'custom'
 
   return (
@@ -33,12 +45,19 @@ export default function PeriodPicker({ value, onChange, custom, onCustomChange, 
                   {p.label}
                 </span>
               ) : (
-                p.label
+                periodLabel(p, anchor)
               )}
             </button>
           )
         })}
       </div>
+
+      {anchor && !isCustom && (
+        <p className="flex items-center gap-1 text-[10px] text-ink-faint">
+          <History className="h-3 w-3" />
+          Períodos contados desde {anchor}, el último día operado
+        </p>
+      )}
 
       {isCustom && (
         <div className="flex animate-fade-in flex-wrap items-center gap-2 rounded-lg border border-line bg-bg-card p-2">

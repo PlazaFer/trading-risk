@@ -38,14 +38,14 @@ import WinRateBar from '../components/charts/WinRateBar.jsx'
 import TradeCard from '../components/journal/TradeCard.jsx'
 
 export default function DashboardPage() {
-  const { trades, settings, account, isLoading } = useJournal()
+  const { trades, settings, account, periodAnchor, isLoading } = useJournal()
   const { newTrade, openTrade } = useUI()
   const [period, setPeriod] = useState('month')
   const [customRange, setCustomRange] = useState({ from: '', to: '' })
 
   const scoped = useMemo(
-    () => filterByPeriod(trades, period, customRange),
-    [trades, period, customRange]
+    () => filterByPeriod(trades, period, customRange, periodAnchor),
+    [trades, period, customRange, periodAnchor]
   )
 
   const stats = useMemo(
@@ -120,7 +120,7 @@ export default function DashboardPage() {
           <p className="text-sm text-ink-soft">
             {stats.count} {stats.count === 1 ? 'trade' : 'trades'} · {stats.tradingDays}{' '}
             {stats.tradingDays === 1 ? 'día operado' : 'días operados'} ·{' '}
-            <span className="text-ink-faint">{describeRange(period, customRange)}</span>
+            <span className="text-ink-faint">{describeRange(period, customRange, periodAnchor)}</span>
           </p>
         </div>
         <PeriodPicker
@@ -128,6 +128,7 @@ export default function DashboardPage() {
           onChange={setPeriod}
           custom={customRange}
           onCustomChange={setCustomRange}
+          anchor={periodAnchor}
         />
       </header>
 
