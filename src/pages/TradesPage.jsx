@@ -125,7 +125,7 @@ export default function TradesPage() {
             ]}
           />
           <button
-            onClick={() => exportCsv(filtered)}
+            onClick={() => exportCsv(filtered, account)}
             disabled={!filtered.length}
             className="btn-ghost btn-sm"
             title="Exportar los trades filtrados a CSV"

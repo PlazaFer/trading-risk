@@ -16,7 +16,9 @@ import {
 import { useJournal } from '../../context/JournalContext.jsx'
 import { useUI } from '../../context/UIContext.jsx'
 import { THEMES } from '../../lib/themes.js'
+import { accountKind, kindClasses } from '../../lib/accounts.js'
 import { money, percent } from '../../lib/format.js'
+import AccountSwitcher from './AccountSwitcher.jsx'
 
 const NAV = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
@@ -52,7 +54,12 @@ export default function Shell() {
 
         <div className="border-t border-line p-3">
           <div className="rounded-lg bg-bg-card p-3">
-            <p className="eyebrow">Balance</p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="truncate eyebrow">{account.name}</p>
+              <span className={`chip shrink-0 ${kindClasses(account.kind)}`}>
+                {accountKind(account.kind).label}
+              </span>
+            </div>
             <p className="tnum mt-1 font-display text-lg font-bold text-ink">
               {money(account.balance)}
             </p>
@@ -95,16 +102,7 @@ export default function Shell() {
             </div>
 
             <div className="ml-auto flex items-center gap-2">
-              <div className="hidden items-baseline gap-2 rounded-lg border border-line bg-bg-sub px-3 py-1.5 sm:flex lg:hidden">
-                <span className="tnum text-sm font-semibold text-ink">{money(account.balance)}</span>
-                <span
-                  className={`tnum text-[11px] ${
-                    account.pnl >= 0 ? 'text-success' : 'text-danger'
-                  }`}
-                >
-                  {money(account.pnl, { sign: true })}
-                </span>
-              </div>
+              <AccountSwitcher />
 
               <ThemeMenu />
 

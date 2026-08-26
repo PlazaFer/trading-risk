@@ -111,12 +111,28 @@ export function stamp() {
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`
 }
 
-export function exportCsv(trades) {
-  downloadFile(`nq-journal-trades-${stamp()}.csv`, tradesToCsv(trades), 'text/csv')
+/**
+ * Filenames carry the account, because the moment you keep more than one
+ * journal, three files called `nq-journal-backup` are indistinguishable.
+ */
+function slug(name) {
+  return (
+    String(name || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 40) || 'cuenta'
+  )
 }
 
-export function exportDailyCsv(days) {
-  downloadFile(`nq-journal-daily-${stamp()}.csv`, dailyToCsv(days), 'text/csv')
+export function exportCsv(trades, account) {
+  downloadFile(`nq-${slug(account?.name)}-trades-${stamp()}.csv`, tradesToCsv(trades), 'text/csv')
+}
+
+export function exportDailyCsv(days, account) {
+  downloadFile(`nq-${slug(account?.name)}-daily-${stamp()}.csv`, dailyToCsv(days), 'text/csv')
 }
 
 /**
@@ -124,7 +140,14 @@ export function exportDailyCsv(days) {
  * makes the file large but completely self-contained — the right choice for
  * an archive you might restore on a different machine.
  */
-export async function exportJson({ trades, dayNotes, cashFlows, settings, includeImages = false }) {
+export async function exportJson({
+  trades,
+  dayNotes,
+  cashFlows,
+  settings,
+  account,
+  includeImages = false,
+}) {
   let payload = { trades, dayNotes, cashFlows, settings }
 
   if (includeImages) {
@@ -141,8 +164,12 @@ export async function exportJson({ trades, dayNotes, cashFlows, settings, includ
 
   const doc = {
     app: 'nq-journal',
-    version: 2,
+    version: 3,
     exported_at: new Date().toISOString(),
+    // Which journal these rows came from. The importer does not read it —
+    // a backup restores into whichever account is open — but without it you
+    // cannot tell two backups apart six months from now.
+    account: account ? { name: account.name, kind: account.kind } : null,
     counts: {
       trades: trades.length,
       dayNotes: dayNotes.length,
@@ -152,7 +179,7 @@ export async function exportJson({ trades, dayNotes, cashFlows, settings, includ
   }
 
   downloadFile(
-    `nq-journal-backup-${stamp()}${includeImages ? '-full' : ''}.json`,
+    `nq-${slug(account?.name)}-backup-${stamp()}${includeImages ? '-full' : ''}.json`,
     JSON.stringify(doc, null, 2),
     'application/json'
   )

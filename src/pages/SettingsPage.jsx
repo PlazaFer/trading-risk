@@ -25,11 +25,13 @@ import { THEMES } from '../lib/themes.js'
 import { money, percent } from '../lib/format.js'
 import { pingSupabase } from '../lib/supabase.js'
 import { exportCsv, exportJson, parseBackup } from '../lib/exporter.js'
-import { wipeAll, replaceAll } from '../lib/repo.js'
+import { replaceAll } from '../lib/repo.js'
 import { generateDemoTrades, generateDemoDayNotes } from '../lib/demoData.js'
+import { ACCOUNT_KINDS, accountKind, kindClasses } from '../lib/accounts.js'
 
 import Confirm from '../components/ui/Confirm.jsx'
 import InfoHint from '../components/ui/InfoHint.jsx'
+import NewAccountDialog from '../components/layout/NewAccountDialog.jsx'
 
 export default function SettingsPage() {
   const {
@@ -41,6 +43,14 @@ export default function SettingsPage() {
     addCashFlow,
     removeCashFlow,
     account,
+    accounts,
+    activeAccountId,
+    accountSummaries,
+    switchAccount,
+    updateAccount,
+    removeAccount,
+    clearAccountData,
+    refreshAccountSummaries,
     supabaseConfigured,
     supabaseHost,
     recalculateAll,
@@ -49,6 +59,7 @@ export default function SettingsPage() {
 
   const [confirm, setConfirm] = useState(null)
   const [testing, setTesting] = useState(false)
+  const [creatingAccount, setCreatingAccount] = useState(false)
   const importRef = useRef(null)
 
   // Changing the risk capital invalidates the stored risk percentages.
@@ -74,8 +85,17 @@ export default function SettingsPage() {
     if (!file) return
     try {
       const data = await parseBackup(file)
-      await replaceAll(data)
-      if (data.settings) updateSettings(data.settings)
+      // A backup restores into whichever account is open. Restoring into the
+      // account it was taken from is the common case; restoring into a fresh
+      // one is how you clone a journal.
+      await replaceAll(data, activeAccountId)
+      if (data.settings) {
+        // The backup's settings are applied to the open account, but its name
+        // and type are not: you asked to restore trades here, not to rename
+        // the account you are standing in.
+        const { accountName, accountKind, ...rest } = data.settings
+        updateSettings(rest)
+      }
       await refresh()
       toast.success(`${data.trades.length} trades importados`)
     } catch (err) {
@@ -87,7 +107,9 @@ export default function SettingsPage() {
     <div className="mx-auto max-w-4xl space-y-6">
       <header>
         <h1 className="font-display text-xl font-bold text-ink">Ajustes</h1>
-        <p className="text-sm text-ink-soft">Cuenta, riesgo, vocabulario del journal y datos.</p>
+        <p className="text-sm text-ink-soft">
+          Cuentas, riesgo, vocabulario del journal y datos.
+        </p>
       </header>
 
       {staleCount > 0 && (
@@ -110,8 +132,11 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {/* ─────────────────────────────── Cuenta ─────────────────────────────── */}
-      <Section title="Cuenta" description="Define el capital base sobre el que se calcula todo.">
+      {/* ────────────────────────── Cuenta activa ────────────────────────── */}
+      <Section
+        title={`Cuenta activa — ${account.name}`}
+        description="Todo lo de esta sección vale solo para esta cuenta. Las demás conservan sus propios números."
+      >
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Nombre de la cuenta">
             <input
@@ -120,6 +145,23 @@ export default function SettingsPage() {
               onChange={(e) => updateSettings({ accountName: e.target.value })}
               className="field"
             />
+          </Field>
+
+          <Field
+            label="Tipo de cuenta"
+            hint="Solo clasifica la cuenta en el selector y en los listados; no cambia ningún cálculo."
+          >
+            <select
+              value={settings.accountKind}
+              onChange={(e) => updateSettings({ accountKind: e.target.value })}
+              className="field"
+            >
+              {ACCOUNT_KINDS.map((k) => (
+                <option key={k.id} value={k.id}>
+                  {k.label}
+                </option>
+              ))}
+            </select>
           </Field>
 
           <Field
@@ -201,6 +243,63 @@ export default function SettingsPage() {
             .
           </p>
         )}
+      </Section>
+
+      {/* ─────────────────────────── Tus cuentas ─────────────────────────── */}
+      <Section
+        title="Tus cuentas"
+        description="Cada una es un journal aparte: sus trades, sus notas, su capital y sus estadísticas. Cambiá de cuenta desde acá o desde el selector del encabezado."
+      >
+        <div className="space-y-2">
+          {accounts.map((a) => (
+            <AccountRow
+              key={a.id}
+              account={a}
+              active={a.id === activeAccountId}
+              summary={
+                a.id === activeAccountId
+                  ? { trades: trades.length, equity: account.balance }
+                  : accountSummaries[a.id]
+              }
+              onOpen={() => switchAccount(a.id)}
+              onRename={(name) => updateAccount(a.id, { name })}
+              onDelete={() =>
+                setConfirm({
+                  title: `¿Eliminar «${a.name}»?`,
+                  message:
+                    'Se borran la cuenta y todo lo que tenga cargado: trades, notas diarias, movimientos de capital y capturas. Las demás cuentas no se tocan. Exportá un backup antes: esto no se puede deshacer.',
+                  confirmLabel: 'Eliminar cuenta',
+                  onConfirm: async () => {
+                    setConfirm(null)
+                    try {
+                      await removeAccount(a.id)
+                    } catch (err) {
+                      toast.error(`No se pudo eliminar: ${err.message}`)
+                    }
+                  },
+                })
+              }
+              deletable={accounts.length > 1}
+            />
+          ))}
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <button onClick={() => setCreatingAccount(true)} className="btn-ghost btn-sm">
+            <Plus className="h-3.5 w-3.5" />
+            Nueva cuenta
+          </button>
+          <button onClick={refreshAccountSummaries} className="btn-ghost btn-sm">
+            <RefreshCw className="h-3.5 w-3.5" />
+            Actualizar saldos
+          </button>
+        </div>
+
+        <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
+          El tema, la zona horaria y el vocabulario (setups, errores, etiquetas) son comunes a todas
+          las cuentas. El dinero no: capital, comisiones, riesgo y límites diarios viven en cada
+          cuenta por separado.
+        </p>
       </Section>
 
       {/* ────────────────────────── Reglas diarias ──────────────────────── */}
@@ -538,12 +637,12 @@ export default function SettingsPage() {
         {/* Export */}
         <h3 className="eyebrow mb-2">Exportar</h3>
         <div className="flex flex-wrap gap-2">
-          <button onClick={() => exportCsv(trades)} disabled={!trades.length} className="btn-ghost btn-sm">
+          <button onClick={() => exportCsv(trades, account)} disabled={!trades.length} className="btn-ghost btn-sm">
             <Download className="h-3.5 w-3.5" />
             CSV de trades
           </button>
           <button
-            onClick={() => exportJson({ trades, dayNotes, cashFlows, settings })}
+            onClick={() => exportJson({ trades, dayNotes, cashFlows, settings, account })}
             className="btn-ghost btn-sm"
           >
             <Download className="h-3.5 w-3.5" />
@@ -552,7 +651,7 @@ export default function SettingsPage() {
           <button
             onClick={() =>
               toast.promise(
-                exportJson({ trades, dayNotes, cashFlows, settings, includeImages: true }),
+                exportJson({ trades, dayNotes, cashFlows, settings, account, includeImages: true }),
                 {
                   loading: 'Empaquetando capturas…',
                   success: 'Backup completo descargado',
@@ -611,7 +710,10 @@ export default function SettingsPage() {
                   if (seeded !== settings) updateSettings(seeded)
 
                   const demo = generateDemoTrades(seeded)
-                  await replaceAll({ trades: demo, dayNotes: generateDemoDayNotes(demo) })
+                  await replaceAll(
+                    { trades: demo, dayNotes: generateDemoDayNotes(demo) },
+                    activeAccountId
+                  )
                   await refresh()
                   toast.success(`${demo.length} trades de ejemplo cargados`)
                 },
@@ -648,7 +750,7 @@ export default function SettingsPage() {
         </div>
 
         <p className="mt-3 text-[11px] text-ink-faint">
-          En la base: <span className="tnum text-ink-soft">{trades.length}</span> trades,{' '}
+          En esta cuenta: <span className="tnum text-ink-soft">{trades.length}</span> trades,{' '}
           <span className="tnum text-ink-soft">{dayNotes.length}</span> notas diarias y{' '}
           <span className="tnum text-ink-soft">{cashFlows.length}</span> movimientos de capital.
         </p>
@@ -662,16 +764,15 @@ export default function SettingsPage() {
         <button
           onClick={() =>
             setConfirm({
-              title: '¿Borrar todo el journal?',
+              title: `¿Vaciar «${account.name}»?`,
               message:
-                'Se eliminan de Supabase todos los trades, notas diarias, movimientos de capital y capturas, en todos tus dispositivos. Exportá un backup antes: esta acción no se puede deshacer.',
-              confirmLabel: 'Borrar todo',
+                'Se eliminan de Supabase los trades, notas diarias, movimientos de capital y capturas de esta cuenta, en todos tus dispositivos. La cuenta queda vacía pero sigue existiendo, y las demás cuentas no se tocan. Exportá un backup antes: esta acción no se puede deshacer.',
+              confirmLabel: 'Vaciar la cuenta',
               onConfirm: async () => {
                 setConfirm(null)
                 try {
-                  await wipeAll()
-                  await refresh()
-                  toast.success('Journal borrado')
+                  await clearAccountData()
+                  toast.success(`«${account.name}» quedó vacía`)
                 } catch (err) {
                   toast.error(`No se pudo borrar: ${err.message}`)
                 }
@@ -681,9 +782,15 @@ export default function SettingsPage() {
           className="btn-danger btn-sm"
         >
           <Trash2 className="h-3.5 w-3.5" />
-          Borrar todo el journal
+          Vaciar esta cuenta
         </button>
+        <p className="mt-2 text-[11px] leading-relaxed text-ink-faint">
+          Solo afecta a <span className="text-ink-soft">{account.name}</span>. Para borrar la cuenta
+          entera, usá el botón de eliminar en «Tus cuentas».
+        </p>
       </Section>
+
+      {creatingAccount && <NewAccountDialog onClose={() => setCreatingAccount(false)} />}
 
       <Confirm
         open={Boolean(confirm)}
@@ -695,6 +802,80 @@ export default function SettingsPage() {
 }
 
 /* ────────────────────────────── building blocks ────────────────────────────── */
+
+/**
+ * One row of the account manager. The name is editable in place because
+ * renaming is the edit people actually make — everything else about an
+ * account is edited by opening it.
+ */
+function AccountRow({ account, active, summary, onOpen, onRename, onDelete, deletable }) {
+  const [name, setName] = useState(account.name)
+
+  // A rename that arrives from elsewhere (the header, another device) must not
+  // be overwritten by this input's stale copy.
+  const [lastSeen, setLastSeen] = useState(account.name)
+  if (account.name !== lastSeen) {
+    setLastSeen(account.name)
+    setName(account.name)
+  }
+
+  const commit = () => {
+    const value = name.trim()
+    if (!value || value === account.name) {
+      setName(account.name)
+      return
+    }
+    onRename(value)
+  }
+
+  return (
+    <div
+      className={`flex flex-wrap items-center gap-3 rounded-lg border p-3 ${
+        active ? 'border-primary/40 bg-primary/8' : 'border-line bg-bg-sub'
+      }`}
+    >
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+            className="min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1.5 py-0.5 text-sm font-semibold text-ink outline-none transition-colors hover:border-line focus:border-primary/50 focus:bg-bg-card"
+            aria-label={`Nombre de ${account.name}`}
+          />
+          <span className={`chip shrink-0 ${kindClasses(account.kind)}`}>
+            {accountKind(account.kind).label}
+          </span>
+          {active && <span className="chip shrink-0 bg-primary/12 text-primary">Activa</span>}
+        </div>
+        <p className="tnum mt-1 px-1.5 text-[11px] text-ink-faint">
+          {summary
+            ? `${money(summary.equity)} · ${summary.trades} trades`
+            : 'Sin datos cargados todavía'}
+          {account.broker && ` · ${account.broker}`}
+        </p>
+      </div>
+
+      <div className="flex shrink-0 items-center gap-2">
+        {!active && (
+          <button onClick={onOpen} className="btn-ghost btn-sm">
+            Abrir
+          </button>
+        )}
+        <button
+          onClick={onDelete}
+          disabled={!deletable}
+          title={deletable ? 'Eliminar cuenta' : 'Tenés que conservar al menos una cuenta'}
+          className="icon-btn text-ink-faint transition-colors hover:text-danger disabled:cursor-not-allowed disabled:opacity-40"
+          aria-label={`Eliminar ${account.name}`}
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
+      </div>
+    </div>
+  )
+}
 
 function Section({ title, description, children }) {
   return (

@@ -23,6 +23,7 @@ const KEY = import.meta.env?.VITE_SUPABASE_ANON_KEY?.trim() || ''
 export const IMAGE_BUCKET = 'trade-images'
 
 export const TABLES = {
+  accounts: 'accounts',
   trades: 'trades',
   dayNotes: 'day_notes',
   cashFlows: 'cash_flows',

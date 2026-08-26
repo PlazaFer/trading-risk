@@ -203,27 +203,20 @@ export async function importDataUrl(id, dataUrl) {
 }
 
 /**
- * Empty the screenshot bucket. Used by the "delete everything" path, where
- * leaving the objects behind would keep paying for storage nobody can reach.
- * Storage `list` pages, so this drains it a page at a time.
+ * Remove a batch of screenshots. Used when a whole account's journal is
+ * deleted: only the objects those trades pointed at go, so the screenshots of
+ * every other account survive.
  */
-export async function wipeAllImages() {
+export async function deleteImages(descriptors) {
+  const paths = [...new Set((descriptors || []).map((d) => d?.path).filter(Boolean))]
+  if (!paths.length) return
+
   const supabase = requireSupabase()
-  const PAGE = 1000
-
-  for (;;) {
-    const { data, error } = await supabase.storage
-      .from(IMAGE_BUCKET)
-      .list('', { limit: PAGE })
+  // `remove` takes a list, but a journal with thousands of screenshots would
+  // build a request larger than Storage accepts.
+  for (let i = 0; i < paths.length; i += 100) {
+    const { error } = await supabase.storage.from(IMAGE_BUCKET).remove(paths.slice(i, i + 100))
     if (error) throw new Error(error.message)
-    if (!data?.length) return
-
-    const paths = data.map((f) => f.name)
-    const { error: removeError } = await supabase.storage.from(IMAGE_BUCKET).remove(paths)
-    if (removeError) throw new Error(removeError.message)
-
-    // A short page means the bucket is drained; a full one may have more.
-    if (data.length < PAGE) return
   }
 }
 

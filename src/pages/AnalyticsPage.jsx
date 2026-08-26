@@ -162,7 +162,7 @@ export default function AnalyticsPage() {
             onCustomChange={setCustomRange}
           />
           <button
-            onClick={() => exportDailyCsv(daily)}
+            onClick={() => exportDailyCsv(daily, account)}
             disabled={!daily.length}
             className="btn-ghost btn-sm self-start"
             title="Exportar el resumen diario a CSV"

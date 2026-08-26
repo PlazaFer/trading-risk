@@ -29,6 +29,29 @@ Para ver la app con contenido antes de cargar tus trades reales:
 
 ## Qué hace
 
+### Cuentas
+
+Un journal por cuenta. El backtest, la demo, el challenge de fondeo y la cuenta
+real no se mezclan: cada una tiene sus trades, sus notas diarias, sus
+movimientos de capital y sus estadísticas.
+
+- **Selector en el encabezado** para cambiar de cuenta o crear una nueva. La
+  cuenta activa se recuerda por dispositivo, así que podés dejar el fondeo
+  abierto en la compu y el backtest en la notebook.
+- **Parámetros propios de cada cuenta**: capital inicial, capital a arriesgar,
+  comisiones, instrumento y R:R por defecto, pérdida máxima diaria y máximo de
+  trades por día. Una cuenta de fondeo arranca con límite diario cargado; un
+  backtest, con un capital de papel redondo.
+- **Lo común sigue siendo común**: tema, zona horaria y el vocabulario del
+  journal (setups, errores, etiquetas) valen para todas las cuentas.
+- **Ajustes → Tus cuentas** para renombrar, abrir o eliminar. Eliminar una
+  cuenta borra su journal completo; las demás no se tocan. Siempre queda al
+  menos una.
+
+Los CSV y los backups JSON son de la cuenta abierta, y llevan su nombre en el
+archivo. Importar un backup lo restaura **en la cuenta activa** — así se clona
+un journal de una cuenta a otra — sin cambiarle el nombre ni el tipo.
+
 ### Journal
 
 - **Calendario mensual** con el P&L de cada día, coloreado por intensidad
@@ -127,7 +150,7 @@ credenciales están, el journal funciona; si no, avisa y no guarda nada.
 
 1. Creá un proyecto en [supabase.com](https://supabase.com)
 2. Ejecutá [`supabase/schema.sql`](supabase/schema.sql) en el SQL Editor — crea
-   las tablas, los índices, el bucket de imágenes y tres vistas de análisis
+   las tablas, los índices, el bucket de imágenes y las vistas de análisis
 3. Copiá `.env.example` a `.env` y completá la URL y la anon key
 4. Reiniciá el servidor
 
@@ -135,9 +158,17 @@ Vite inlinea las `VITE_*` en el bundle **al compilar**, no las lee en runtime.
 Por eso en Vercel van en *Environment Variables* y hace falta redeployar para
 que un cambio tome efecto.
 
-El esquema incluye vistas listas para usar:
+`schema.sql` es idempotente y también es la migración: en un journal creado
+antes de que existieran las cuentas, crea una cuenta a partir de tus ajustes
+actuales y le adjudica **todos** los trades, notas y movimientos que ya tenías.
+No se pierde nada, y al abrir la app esa cuenta es la que está activa. Volvé a
+correrlo después de actualizar el código; hasta que lo hagas la app avisa que
+falta la tabla `accounts` en vez de mostrarte un journal vacío.
+
+El esquema incluye vistas listas para usar, todas desglosadas por cuenta:
 
 ```sql
+select * from v_accounts;             -- una fila por cuenta, con su equity
 select * from v_daily_pnl;            -- P&L por día
 select * from v_setup_performance;    -- rendimiento por setup
 select * from v_session_performance;  -- rendimiento por sesión
@@ -175,16 +206,17 @@ src/
 │   ├── repo.js          Repositorio: todas las lecturas y escrituras
 │   ├── supabase.js      Cliente Supabase y configuración
 │   ├── exporter.js      CSV / JSON, importación de backups
+│   ├── accounts.js      Tipos de cuenta y qué ajuste vive en cuál
 │   ├── taxonomy.js      Setups, errores, emociones por defecto
 │   └── periods.js       Rangos de fechas
 ├── context/
-│   ├── JournalContext   Datos, ajustes y mutaciones
+│   ├── JournalContext   Cuentas, datos, ajustes y mutaciones
 │   └── UIContext        Modales de trade y atajos globales
 ├── components/
 │   ├── ui/              Modal, TagPicker, ImageUploader, Lightbox…
 │   ├── charts/          Curva de capital, P&L diario, distribución de R
 │   ├── journal/         Calendario, formulario, tarjeta y detalle de trade
-│   └── layout/          Shell y navegación
+│   └── layout/          Shell, navegación y selector de cuentas
 └── pages/               Dashboard, Calendario, Día, Trades, Analítica, Ajustes
 ```
 

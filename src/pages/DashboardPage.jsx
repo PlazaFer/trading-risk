@@ -24,6 +24,7 @@ import {
 } from '../lib/calc.js'
 import { filterByPeriod, describeRange } from '../lib/periods.js'
 import { money, percent, pnl, profitFactor, rMultiple } from '../lib/format.js'
+import { kindClasses } from '../lib/accounts.js'
 import { WEEKDAY_LABELS, sessionLabel } from '../lib/time.js'
 
 import Stat from '../components/ui/Stat.jsx'
@@ -78,8 +79,8 @@ export default function DashboardPage() {
     return (
       <EmptyState
         icon={CalendarDays}
-        title="Tu journal está vacío"
-        message="Cargá tu primer trade de NQ o MNQ. A partir de ahí el journal calcula solo tu win rate, profit factor, R-múltiplos y drawdown."
+        title={`«${account.name}» todavía no tiene trades`}
+        message="Cargá el primero. A partir de ahí el journal calcula solo tu win rate, profit factor, R-múltiplos y drawdown — para esta cuenta, sin mezclarla con las demás."
         action={
           <button onClick={() => newTrade()} className="btn-primary">
             <Plus className="h-4 w-4" />
@@ -112,7 +113,10 @@ export default function DashboardPage() {
 
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="font-display text-xl font-bold text-ink">Dashboard</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="font-display text-xl font-bold text-ink">Dashboard</h1>
+            <span className={`chip ${kindClasses(account.kind)}`}>{account.name}</span>
+          </div>
           <p className="text-sm text-ink-soft">
             {stats.count} {stats.count === 1 ? 'trade' : 'trades'} · {stats.tradingDays}{' '}
             {stats.tradingDays === 1 ? 'día operado' : 'días operados'} ·{' '}
