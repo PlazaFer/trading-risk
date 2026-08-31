@@ -9,6 +9,7 @@ export default function Stat({
   value,
   hint,
   sub,
+  delta,
   icon: Icon,
   tone = 'neutral',
   signed,
@@ -45,8 +46,11 @@ export default function Stat({
             <span className="eyebrow truncate">{label}</span>
             {hint && <InfoHint text={hint} />}
           </div>
-          <div className={`tnum mt-2 font-display text-2xl font-semibold leading-none ${valueTone}`}>
-            {value}
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className={`tnum font-display text-2xl font-semibold leading-none ${valueTone}`}>
+              {value}
+            </span>
+            {delta}
           </div>
           {sub && <div className="mt-1.5 truncate text-xs text-ink-soft">{sub}</div>}
         </div>

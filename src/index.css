@@ -285,4 +285,10 @@
   .grid-cols-week {
     grid-template-columns: repeat(7, minmax(0, 1fr)) minmax(0, 1.15fr);
   }
+
+  /* Weekday-only variant: futures barely trade on the weekend, and two dead
+     columns cost a quarter of the grid's width for no information. */
+  .grid-cols-week-5 {
+    grid-template-columns: repeat(5, minmax(0, 1fr)) minmax(0, 1.15fr);
+  }
 }

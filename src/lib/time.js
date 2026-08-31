@@ -169,6 +169,37 @@ export const SESSIONS = [
 
 export const SESSION_BY_ID = Object.fromEntries(SESSIONS.map((s) => [s.id, s]))
 
+/** Session ids in clock order — the order every session view renders in. */
+export const SESSION_IDS = SESSIONS.map((s) => s.id)
+
+const clock = (minutes) => `${pad(Math.floor(minutes / 60) % 24)}:${pad(minutes % 60)}`
+
+/**
+ * The hours a session covers, on the exchange clock.
+ *
+ * Shown next to every session label. "NY AM" means nothing until you can see
+ * it is 09:30–11:30, and a trader comparing sessions is really comparing
+ * time windows — the name is just a handle for the window.
+ */
+export function sessionRange(id) {
+  const s = SESSION_BY_ID[id]
+  return s ? `${clock(s.from)}–${clock(s.to)}` : ''
+}
+
+/** Minutes past midnight on the exchange clock — the intraday bucket key. */
+export function exchangeMinutes(value) {
+  if (!value) return null
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  const p = zonedParts(date, EXCHANGE_TZ)
+  return p.hour * 60 + p.minute
+}
+
+/** `HH:mm` for a minutes-past-midnight bucket key. */
+export function minutesLabel(minutes) {
+  return clock(((minutes % 1440) + 1440) % 1440)
+}
+
 /** Which session an instant falls into, judged on the exchange clock. */
 export function sessionOf(value) {
   if (!value) return null

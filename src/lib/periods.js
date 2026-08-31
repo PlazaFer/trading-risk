@@ -102,3 +102,28 @@ export function filterByRange(trades, from, to) {
     return true
   })
 }
+
+/**
+ * The window of the same length that sits immediately before this one.
+ *
+ * The comparison a trader actually wants is "against last time", and last
+ * time has to be the same size or the delta is meaningless — thirty days
+ * against a year says nothing about whether anything improved. Returns
+ * `null` for an open-ended range, where there is no "before" to speak of.
+ */
+export function previousRange(from, to) {
+  if (!from || !to) return null
+  const start = dateFromKey(from)
+  const end = dateFromKey(to)
+  if (!start || !end) return null
+
+  const days = Math.round((end - start) / 86400000) + 1
+  if (days < 1) return null
+
+  const prevEnd = new Date(start)
+  prevEnd.setDate(prevEnd.getDate() - 1)
+  const prevStart = new Date(prevEnd)
+  prevStart.setDate(prevStart.getDate() - (days - 1))
+
+  return { from: keyFromDate(prevStart), to: keyFromDate(prevEnd) }
+}

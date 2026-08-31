@@ -110,26 +110,59 @@ El riesgo se resuelve en este orden, y gana el primero que aplique:
 
 ### Analítica
 
-Win rate, profit factor, expectativa por trade, R promedio y acumulado, payoff,
-máximo drawdown ($ y %), rachas, días verdes vs rojos, duración media de
-ganadores contra perdedores, y curva de capital.
+Cuatro pestañas, y cada una es una pregunta en vez de una categoría. La regla
+que las mantiene legibles es que **cada número vive en una sola pestaña**: el
+win rate llegó a aparecer seis veces en esta pantalla, y una cifra repetida en
+cuatro lugares deja de ser énfasis para volverse una razón para saltearse las
+cuatro.
 
-Filtrable por presets (este mes, mes pasado, 30/90 días, este año) o por un
-**rango de fechas exacto**.
+**Resumen — ¿el sistema paga?**
+P&L neto, balance, win rate, profit factor, expectativa y actividad, cada uno
+con su variación contra el período anterior de la misma duración. Debajo: la
+curva de resultado acumulado (por trade, día, semana o mes), el win rate de
+equilibrio que tu ratio G/P exige, el R:R obtenido contra el planificado, la
+captura del objetivo, ganadores contra perdedores y la grilla mes a mes.
 
-Desglose de rendimiento por setup, sesión, hora de entrada, día de la semana,
-dirección, tamaño de posición, tamaño del riesgo, instrumento, etiqueta y estado
-mental.
+**Cuándo — ¿en qué día y a qué hora?**
+La pestaña que la mayoría de los journals no tiene, y donde suele estar la
+mejora más barata que existe:
 
-Tres análisis que la mayoría de los journals no trae:
+- **Matriz día de la semana × sesión.** Cada celda es un cruce concreto, con la
+  cantidad de trades adentro. Un día no es bueno o malo por sí solo: el dinero
+  se pierde en una intersección — «martes después del almuerzo» — que ni el
+  desglose por día ni el de por sesión pueden mostrar por separado. Se puede
+  ver por resultado, win rate, cantidad o promedio.
+- **Perfil intradiario** en franjas de 30 minutos, agrupadas bajo su sesión y
+  ordenadas desde la apertura de Globex (18:00 ET) para que Asia no quede
+  partida en los dos extremos. Las franjas vacías dentro del rango se
+  conservan: un horario que evitás también es información.
+- **Por sesión**, con el rango horario a la vista — el horario es la
+  definición, el nombre es sólo la etiqueta.
+- **Por día de la semana** y **por duración de la posición**.
+- **Conclusiones con la plata al lado**: la mejor y la peor franja, y cuánto
+  cerraría el período sin ella. Nada se afirma con menos de 4 trades, y ninguna
+  franja que cubra más del 60% del journal cuenta como hallazgo — eso describe
+  el hábito, no un edge adentro de él.
 
-- **Cuánto te cuesta cada error** — el total en dólares de los trades marcados
-  con cada error del vocabulario.
-- **Disciplina** — el resultado promedio de los trades donde seguiste el plan
-  contra aquellos donde improvisaste.
-- **Gestión de riesgo** — riesgo medio y máximo como % del capital, trades que
-  superaron tu límite, y los días en que rompiste tu pérdida máxima diaria o tu
-  tope de trades. Cada día roto enlaza a su página.
+**Qué — ¿qué setup, qué lado, qué tamaño?**
+Rendimiento por setup (diciendo qué porcentaje de tu operativa no tiene setup
+cargado, que es lo que el panel no puede explicar), long contra short, tamaño
+de posición, distribución de R-múltiplos, etiquetas, estado mental e
+instrumento.
+
+**Riesgo — ¿qué costó aguantarlo y seguí mis reglas?**
+Drawdown y proceso juntos, porque el drawdown es la consecuencia del sizing y
+las reglas rotas que están al lado. Curva bajo el agua, rachas, los días más
+caros, riesgo medio y máximo como % del capital, consistencia del sizing, si te
+paga arriesgar más, los días en que rompiste tu límite diario, plan contra
+improvisación, trades limpios contra trades con errores, y cuánto te cuesta
+cada error del vocabulario.
+
+Todo filtrable por presets (este mes, mes pasado, 30/90 días, este año) o por
+un **rango de fechas exacto**. El rango es uno solo para toda la app: elegirlo
+en el Dashboard y pasar a Analítica no cambia la pregunta a mitad de camino.
+Los filtros son aditivos — «NY AM *y* NY PM» es una pregunta normal — y valen
+para las cuatro pestañas a la vez.
 
 ### Exportar
 
@@ -201,7 +234,7 @@ src/
 ├── lib/
 │   ├── instruments.js   Especificaciones de contratos de futuros
 │   ├── time.js          Zonas horarias, sesiones y día de trading Globex
-│   ├── calc.js          Derivación de trades y motor de estadísticas
+│   ├── calc.js          Derivación de trades, estadísticas y análisis por horario
 │   ├── imageStore.js    Compresión y subida de capturas al bucket
 │   ├── repo.js          Repositorio: todas las lecturas y escrituras
 │   ├── supabase.js      Cliente Supabase y configuración
@@ -214,7 +247,8 @@ src/
 │   └── UIContext        Modales de trade y atajos globales
 ├── components/
 │   ├── ui/              Modal, TagPicker, ImageUploader, Lightbox…
-│   ├── charts/          Curva de capital, P&L diario, distribución de R
+│   ├── charts/          Curva de capital, matriz día × sesión, perfil intradiario
+│   ├── analytics/       Las cuatro pestañas: Resumen, Cuándo, Qué, Riesgo
 │   ├── journal/         Calendario, formulario, tarjeta y detalle de trade
 │   └── layout/          Shell, navegación y selector de cuentas
 └── pages/               Dashboard, Calendario, Día, Trades, Analítica, Ajustes

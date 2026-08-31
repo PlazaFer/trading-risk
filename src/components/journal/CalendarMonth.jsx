@@ -33,7 +33,7 @@ export default function CalendarMonth({
   onSelectDay,
   selectedDay,
 }) {
-  const { weeks, maxAbs } = useMemo(() => {
+  const { weeks, maxAbs, showWeekend } = useMemo(() => {
     const start = startOfWeek(startOfMonth(month), { weekStartsOn: 1 })
     const end = endOfWeek(endOfMonth(month), { weekStartsOn: 1 })
     const days = eachDayOfInterval({ start, end })
@@ -61,16 +61,29 @@ export default function CalendarMonth({
       }
     })
 
+    // Saturday and Sunday only earn their columns if something happened in
+    // them. For an index-futures journal that is almost never, and the two
+    // empty columns cost a quarter of the width every other day could use.
+    const weekend = cells.some(
+      (c) => (c.date.getDay() === 0 || c.date.getDay() === 6) && c.trades.length > 0
+    )
+
     const grouped = []
-    for (let i = 0; i < cells.length; i += 7) grouped.push(cells.slice(i, i + 7))
-    return { weeks: grouped, maxAbs: max || 1 }
+    for (let i = 0; i < cells.length; i += 7) {
+      const week = cells.slice(i, i + 7)
+      grouped.push(weekend ? week : week.slice(0, 5))
+    }
+    return { weeks: grouped, maxAbs: max || 1, showWeekend: weekend }
   }, [month, tradesByDay, dayNoteMap])
+
+  const gridClass = showWeekend ? 'grid-cols-week' : 'grid-cols-week-5'
+  const headers = showWeekend ? WEEKDAYS : WEEKDAYS.slice(0, 5)
 
   return (
     <div className="card overflow-hidden">
       {/* Weekday header */}
-      <div className="grid grid-cols-week border-b border-line bg-bg-sub">
-        {WEEKDAYS.map((d) => (
+      <div className={`grid ${gridClass} border-b border-line bg-bg-sub`}>
+        {headers.map((d) => (
           <div
             key={d}
             className="px-2 py-2 text-center text-[11px] font-semibold uppercase tracking-wider text-ink-faint"
@@ -90,7 +103,7 @@ export default function CalendarMonth({
           const weekDays = week.filter((d) => d.trades.length).length
 
           return (
-            <div key={wi} className="grid grid-cols-week">
+            <div key={wi} className={`grid ${gridClass}`}>
               {week.map((cell) => (
                 <DayCell
                   key={cell.key}

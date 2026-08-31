@@ -170,7 +170,7 @@ export default function TradeDetail({ trade, open, onClose, onEdit }) {
                 }
               />
               <Detail
-                label="R:R utilizado"
+                label="R:R planificado"
                 value={trade.planned_rr ? `1 : ${trade.planned_rr.toFixed(2)}` : '—'}
               />
               <Detail label="Valor del punto" value={money(spec.pointValue)} />

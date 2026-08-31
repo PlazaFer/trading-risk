@@ -663,13 +663,14 @@ export default function TradeForm({ open, onClose, trade = null, defaultDate = n
               )}
               <MiniField label="Bruto" value={pnl(preview.gross_pnl)} />
               <MiniField label="Comisión" value={money(-Math.abs(preview.commission))} />
+              {/* The risk is already the headline figure to the right; a
+                  second copy of it here read as a different number. */}
               <MiniField
-                label="Riesgo"
-                value={preview.risk_amount ? money(preview.risk_amount) : '—'}
-              />
-              <MiniField
-                label="RR planificado"
-                value={preview.planned_rr ? `${preview.planned_rr.toFixed(2)} : 1` : '—'}
+                label="R:R planificado"
+                // Written the way the rest of the app writes a ratio — and the
+                // way the field above asks for it. Flipped to "2.00 : 1" it
+                // reads as the inverse ratio, which is a different trade.
+                value={preview.planned_rr ? `1 : ${preview.planned_rr.toFixed(2)}` : '—'}
               />
             </dl>
 

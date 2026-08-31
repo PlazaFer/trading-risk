@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import { Check, Loader2, NotebookPen } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Check, ChevronDown, Loader2, NotebookPen } from 'lucide-react'
 
 import { useJournal } from '../../context/JournalContext.jsx'
 import { MARKET_BIAS, EMOTIONS } from '../../lib/taxonomy.js'
@@ -14,6 +14,12 @@ const EMPTY = {
   lessons: '',
 }
 
+const hasContent = (note) =>
+  Boolean(
+    note &&
+      (note.bias || note.mood || note.discipline || note.plan || note.review || note.lessons)
+  )
+
 /**
  * The daily journal entry: what you planned before the open, and what you
  * concluded after the close.
@@ -22,22 +28,33 @@ const EMPTY = {
  * remember to save is a review you eventually lose, and the friction is
  * exactly where people quit journaling.
  */
-export default function DayNoteEditor({ date }) {
+export default function DayNoteEditor({ date, defaultOpen = false }) {
   const { getDayNote, upsertDayNote } = useJournal()
   const existing = getDayNote(date)
 
   const [form, setForm] = useState(() => ({ ...EMPTY, ...(existing || {}) }))
   const [status, setStatus] = useState('idle') // idle | saving | saved
+  // Six fields and three textareas is most of a screen. An empty entry opens
+  // collapsed so the trades stay above the fold; one that already has writing
+  // in it opens expanded, because then it *is* the reason you came here.
+  const [open, setOpen] = useState(() => defaultOpen || hasContent(existing))
   const timer = useRef(null)
   const dirty = useRef(false)
 
   // Reload when navigating between days.
   useEffect(() => {
-    setForm({ ...EMPTY, ...(getDayNote(date) || {}) })
+    const note = getDayNote(date)
+    setForm({ ...EMPTY, ...(note || {}) })
+    setOpen(defaultOpen || hasContent(note))
     dirty.current = false
     setStatus('idle')
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [date])
+  }, [date, defaultOpen])
+
+  const filledCount = useMemo(
+    () => [form.plan, form.review, form.lessons].filter((v) => v && v.trim()).length,
+    [form.plan, form.review, form.lessons]
+  )
 
   useEffect(() => {
     if (!dirty.current) return undefined
@@ -61,13 +78,29 @@ export default function DayNoteEditor({ date }) {
   }
 
   return (
-    <section className="card p-5">
-      <header className="mb-4 flex items-center justify-between gap-3">
-        <h2 className="flex items-center gap-2 font-display text-sm font-semibold text-ink">
-          <NotebookPen className="h-4 w-4 text-primary" />
-          Diario del día
-        </h2>
-        <span className="flex items-center gap-1.5 text-[11px] text-ink-faint">
+    <section className={`card ${open ? 'p-5' : 'p-3'}`}>
+      <header className={`flex items-center justify-between gap-3 ${open ? 'mb-4' : ''}`}>
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="flex min-w-0 items-center gap-2 text-left"
+        >
+          <NotebookPen className="h-4 w-4 shrink-0 text-primary" />
+          <span className="font-display text-sm font-semibold text-ink">Diario del día</span>
+          {!open && (
+            <span className="truncate text-[11px] text-ink-faint">
+              {filledCount
+                ? `${filledCount} de 3 campos escritos`
+                : 'Plan, desarrollo y lección — se guarda solo'}
+            </span>
+          )}
+          <ChevronDown
+            className={`h-3.5 w-3.5 shrink-0 text-ink-faint transition-transform ${
+              open ? 'rotate-180' : ''
+            }`}
+          />
+        </button>
+        <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-ink-faint">
           {status === 'saving' && (
             <>
               <Loader2 className="h-3 w-3 animate-spin" />
@@ -80,11 +113,11 @@ export default function DayNoteEditor({ date }) {
               Guardado
             </>
           )}
-          {status === 'idle' && 'Se guarda solo'}
+          {status === 'idle' && open && 'Se guarda solo'}
         </span>
       </header>
 
-      <div className="space-y-4">
+      <div className={`space-y-4 ${open ? '' : 'hidden'}`}>
         <div className="grid gap-4 sm:grid-cols-3">
           <div>
             <label className="label">Sesgo del día</label>

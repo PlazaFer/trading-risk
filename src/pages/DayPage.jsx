@@ -8,7 +8,7 @@ import { useJournal } from '../context/JournalContext.jsx'
 import { useUI } from '../context/UIContext.jsx'
 import { computeRuleBreaks, computeStats } from '../lib/calc.js'
 import { money, percent, pnl, pnlText, profitFactor, rMultiple } from '../lib/format.js'
-import { dateFromKey, keyFromDate } from '../lib/time.js'
+import { SESSIONS, dateFromKey, keyFromDate, sessionLabel } from '../lib/time.js'
 
 import TradeCard from '../components/journal/TradeCard.jsx'
 import DayNoteEditor from '../components/journal/DayNoteEditor.jsx'
@@ -42,6 +42,25 @@ export default function DayPage() {
       })[0] || null,
     [dayTrades, settings.maxDailyLoss, settings.maxTradesPerDay]
   )
+
+  /**
+   * Which sessions the day actually happened in, in clock order.
+   *
+   * A day summary that only totals the money hides the shape of the day: two
+   * trades at the open and four after lunch is a different day from six at
+   * the open, and it is the difference the When tab exists to explain.
+   */
+  const bySession = useMemo(() => {
+    const map = new Map()
+    for (const t of dayTrades) {
+      if (!t.session) continue
+      const b = map.get(t.session) || { id: t.session, count: 0, netPnl: 0 }
+      b.count += 1
+      b.netPnl += Number(t.net_pnl) || 0
+      map.set(t.session, b)
+    }
+    return SESSIONS.filter((s) => map.has(s.id)).map((s) => map.get(s.id))
+  }, [dayTrades])
 
   const gallery = useMemo(
     () =>
@@ -134,6 +153,23 @@ export default function DayPage() {
         </div>
       )}
 
+      {bySession.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[11px] text-ink-faint">Sesiones operadas:</span>
+          {bySession.map((s) => (
+            <span
+              key={s.id}
+              className="chip border border-line bg-bg-sub text-ink-soft"
+              title={`${s.count} ${s.count === 1 ? 'trade' : 'trades'}`}
+            >
+              {sessionLabel(s.id)}
+              <span className={`tnum font-semibold ${pnlText(s.netPnl)}`}>{pnl(s.netPnl)}</span>
+              <span className="tnum text-ink-faint">· {s.count}</span>
+            </span>
+          ))}
+        </div>
+      )}
+
       {ruleBreak && (
         <div className="flex items-start gap-3 rounded-xl border border-danger/30 bg-danger/8 p-4">
           <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-danger" />
@@ -161,8 +197,6 @@ export default function DayPage() {
           </div>
         </div>
       )}
-
-      <DayNoteEditor date={date} />
 
       {/* Trades */}
       <section>
@@ -202,6 +236,11 @@ export default function DayPage() {
           </div>
         )}
       </section>
+
+      {/* Open by default on the two days the writing is the point: a day you
+          sat out — where the note is the only record that the decision
+          happened — and a day you broke your own rules. */}
+      <DayNoteEditor date={date} defaultOpen={!dayTrades.length || Boolean(ruleBreak)} />
 
       {/* All screenshots from the day, side by side */}
       {gallery.length > 0 && (

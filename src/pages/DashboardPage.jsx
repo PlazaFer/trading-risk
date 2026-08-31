@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowRight,
@@ -15,33 +15,40 @@ import {
 
 import { useJournal } from '../context/JournalContext.jsx'
 import { useUI } from '../context/UIContext.jsx'
+import { buildDailySeries, computeStats, diffStats, rankSlices } from '../lib/calc.js'
 import {
-  buildDailySeries,
-  buildRDistribution,
-  computeStats,
-  groupPerformance,
-  weekdayPerformance,
-} from '../lib/calc.js'
-import { filterByPeriod, describeRange } from '../lib/periods.js'
+  describeRange,
+  filterByPeriod,
+  filterByRange,
+  previousRange,
+  resolveRange,
+} from '../lib/periods.js'
 import { money, percent, pnl, pnlText, profitFactor, rMultiple } from '../lib/format.js'
 import { kindClasses } from '../lib/accounts.js'
-import { WEEKDAY_LABELS, sessionLabel } from '../lib/time.js'
 
 import Stat from '../components/ui/Stat.jsx'
 import PeriodPicker from '../components/ui/PeriodPicker.jsx'
 import EmptyState from '../components/ui/EmptyState.jsx'
 import EquityCurve from '../components/charts/EquityCurve.jsx'
 import DailyPnlBars from '../components/charts/DailyPnlBars.jsx'
-import RDistribution from '../components/charts/RDistribution.jsx'
-import PerformanceList from '../components/charts/PerformanceList.jsx'
 import WinRateBar from '../components/charts/WinRateBar.jsx'
 import TradeCard from '../components/journal/TradeCard.jsx'
+import { Delta, Finding } from '../components/analytics/primitives.jsx'
 
+/**
+ * The dashboard answers exactly one question — "how am I doing right now" —
+ * and hands every other question to Analytics.
+ *
+ * It used to answer four. The R-multiple histogram, the by-setup, by-session
+ * and by-weekday breakdowns all lived here *and* on the Analytics page, which
+ * meant the home screen scrolled for two thousand pixels to show numbers the
+ * trader would see again the moment they clicked the next tab. What replaces
+ * them is a single Focus panel that names the one slice carrying the account
+ * and the one bleeding it, and links through to the screen that explains why.
+ */
 export default function DashboardPage() {
   const { trades, settings, account, periodAnchor, isLoading } = useJournal()
-  const { newTrade, openTrade } = useUI()
-  const [period, setPeriod] = useState('month')
-  const [customRange, setCustomRange] = useState({ from: '', to: '' })
+  const { newTrade, openTrade, period, setPeriod, customRange, setCustomRange } = useUI()
 
   const scoped = useMemo(
     () => filterByPeriod(trades, period, customRange, periodAnchor),
@@ -53,17 +60,21 @@ export default function DashboardPage() {
     [scoped, account.startingBalance]
   )
 
+  /** The equivalent window immediately before this one, for the deltas. */
+  const diff = useMemo(() => {
+    const { from, to } = resolveRange(period, customRange, periodAnchor)
+    const prev = previousRange(from, to)
+    if (!prev) return null
+    const previousTrades = filterByRange(trades, prev.from, prev.to)
+    if (!previousTrades.length) return null
+    return diffStats(
+      stats,
+      computeStats(previousTrades, { startingBalance: account.startingBalance })
+    )
+  }, [trades, period, customRange, periodAnchor, stats, account.startingBalance])
+
   const daily = useMemo(() => buildDailySeries(scoped), [scoped])
-  const rDist = useMemo(() => buildRDistribution(scoped), [scoped])
-  const bySetup = useMemo(() => groupPerformance(scoped, (t) => t.setup || 'Sin setup'), [scoped])
-  const bySession = useMemo(
-    () => groupPerformance(scoped, (t) => t.session, { labelFn: sessionLabel }),
-    [scoped]
-  )
-  const byWeekday = useMemo(
-    () => weekdayPerformance(scoped).map((g) => ({ ...g, label: WEEKDAY_LABELS[g.key] })),
-    [scoped]
-  )
+  const edges = useMemo(() => rankSlices(scoped, { minCount: 4 }), [scoped])
 
   const recent = useMemo(
     () =>
@@ -92,6 +103,8 @@ export default function DashboardPage() {
   }
 
   const needsSetup = !Number(settings.startingBalance)
+  const best = edges.best[0] || null
+  const worst = edges.worst[0] || null
 
   return (
     <div className="space-y-6">
@@ -149,14 +162,16 @@ export default function DashboardPage() {
               tone="auto"
               signed={stats.netPnl}
               icon={Wallet}
+              delta={diff ? <Delta value={diff.netPnl} format={(v) => money(v)} /> : null}
               sub={`${money(stats.commissions)} en comisiones`}
-              hint="Resultado después de comisiones en el período seleccionado."
+              hint="Resultado después de comisiones en el período seleccionado. El triángulo compara contra el período anterior de la misma duración."
             />
             <Stat
               label="Win rate"
               value={percent(stats.winRate)}
               icon={Percent}
               tone={stats.winRate >= 50 ? 'success' : 'neutral'}
+              delta={diff ? <Delta value={diff.winRate} format={(v) => `${v.toFixed(0)}pp`} /> : null}
               sub={`${stats.wins}G · ${stats.losses}P${stats.breakeven ? ` · ${stats.breakeven}BE` : ''}`}
               hint="Porcentaje de trades ganadores. Por sí solo no dice nada: un 35% con RR 3:1 es más rentable que un 70% con RR 0.5:1."
             />
@@ -165,6 +180,11 @@ export default function DashboardPage() {
               value={profitFactor(stats.profitFactor)}
               icon={Scale}
               tone={stats.profitFactor >= 1.5 ? 'success' : stats.profitFactor >= 1 ? 'warning' : 'danger'}
+              delta={
+                diff?.profitFactor !== null && diff?.profitFactor !== undefined ? (
+                  <Delta value={diff.profitFactor} format={(v) => v.toFixed(2)} />
+                ) : null
+              }
               sub={`${money(stats.grossProfit)} ganado / ${money(stats.grossLoss)} perdido`}
               hint="Cuánto ganás por cada dólar que perdés. Por debajo de 1 la estrategia pierde plata; 1.5 o más es un edge sólido."
             />
@@ -212,28 +232,18 @@ export default function DashboardPage() {
                 <p className="tnum font-display text-lg font-bold text-ink">
                   {money(account.startingBalance + stats.netPnl)}
                 </p>
-                <p
-                  className={`tnum text-[11px] font-medium ${
-                    pnlText(stats.netPnl)
-                  }`}
-                >
+                <p className={`tnum text-[11px] font-medium ${pnlText(stats.netPnl)}`}>
                   {pnl(stats.netPnl)} en el período
                 </p>
               </div>
             </header>
-            <EquityCurve
-              trades={scoped}
-              startingBalance={account.startingBalance}
-              height={260}
-            />
+            <EquityCurve trades={scoped} startingBalance={account.startingBalance} height={260} />
           </section>
 
           {/* ─────────────────────── Daily + consistency ─────────────────── */}
           <div className="grid gap-4 lg:grid-cols-3">
             <section className="card p-5 lg:col-span-2">
-              <h2 className="mb-4 font-display text-sm font-semibold text-ink">
-                Resultado por día
-              </h2>
+              <h2 className="mb-4 font-display text-sm font-semibold text-ink">Resultado por día</h2>
               <DailyPnlBars data={daily} height={230} />
             </section>
 
@@ -249,7 +259,11 @@ export default function DashboardPage() {
                   value={percent(stats.dayWinRate)}
                   tone={stats.dayWinRate >= 50 ? 'text-success' : 'text-ink'}
                 />
-                <Line label="P&L promedio diario" value={pnl(stats.avgDailyPnl)} tone={pnlText(stats.avgDailyPnl)} />
+                <Line
+                  label="P&L promedio diario"
+                  value={pnl(stats.avgDailyPnl)}
+                  tone={pnlText(stats.avgDailyPnl)}
+                />
                 <Line label="Trades por día" value={stats.avgTradesPerDay.toFixed(1)} />
                 <Line label="Ganancia media" value={money(stats.avgWin)} tone="text-success" />
                 <Line label="Pérdida media" value={money(-stats.avgLoss)} tone="text-danger" />
@@ -261,56 +275,72 @@ export default function DashboardPage() {
 
               {stats.bestDay && (
                 <div className="grid grid-cols-2 gap-2 border-t border-line pt-4">
-                  <div className="rounded-lg bg-success/8 p-2.5">
+                  <Link
+                    to={`/dia/${stats.bestDay.day}`}
+                    className="rounded-lg bg-success/8 p-2.5 transition-colors hover:bg-success/15"
+                  >
                     <p className="text-[10px] uppercase tracking-wider text-ink-faint">Mejor día</p>
                     <p className="tnum mt-0.5 text-sm font-bold text-success">
                       {pnl(stats.bestDay.netPnl)}
                     </p>
                     <p className="text-[10px] text-ink-faint">{stats.bestDay.day}</p>
-                  </div>
-                  <div className="rounded-lg bg-danger/8 p-2.5">
+                  </Link>
+                  <Link
+                    to={`/dia/${stats.worstDay.day}`}
+                    className="rounded-lg bg-danger/8 p-2.5 transition-colors hover:bg-danger/15"
+                  >
                     <p className="text-[10px] uppercase tracking-wider text-ink-faint">Peor día</p>
                     <p className="tnum mt-0.5 text-sm font-bold text-danger">
                       {pnl(stats.worstDay.netPnl)}
                     </p>
                     <p className="text-[10px] text-ink-faint">{stats.worstDay.day}</p>
-                  </div>
+                  </Link>
                 </div>
               )}
             </section>
           </div>
 
-          {/* ────────────────────────── Breakdowns ───────────────────────── */}
-          <div className="grid gap-4 lg:grid-cols-3">
-            <section className="card p-5">
-              <h2 className="mb-3 font-display text-sm font-semibold text-ink">Por setup</h2>
-              <PerformanceList groups={bySetup} limit={6} />
-            </section>
-
-            <section className="card p-5">
-              <h2 className="mb-3 font-display text-sm font-semibold text-ink">Por sesión</h2>
-              <PerformanceList groups={bySession} limit={6} />
-            </section>
-
-            <section className="card p-5">
-              <h2 className="mb-3 font-display text-sm font-semibold text-ink">Por día de semana</h2>
-              <PerformanceList groups={byWeekday} showWinRate />
-            </section>
-          </div>
-
-          {/* ───────────────────────── R distribution ─────────────────────── */}
-          {rDist.some((b) => b.count > 0) && (
-            <section className="card p-5">
-              <header className="mb-4">
+          {/* ────────────────────────── Where it comes from ───────────────── */}
+          {(best || worst) && (
+            <section>
+              <header className="mb-3 flex items-center justify-between">
                 <h2 className="font-display text-sm font-semibold text-ink">
-                  Distribución de R-múltiplos
+                  De dónde sale el resultado
                 </h2>
-                <p className="text-[11px] text-ink-faint">
-                  Un sistema sano concentra las pérdidas en −1R y deja correr las ganancias hacia la
-                  derecha
-                </p>
+                <Link
+                  to="/analitica"
+                  className="flex items-center gap-1 text-xs font-medium text-primary transition-opacity hover:opacity-80"
+                >
+                  Ver el análisis completo
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </Link>
               </header>
-              <RDistribution data={rDist} height={210} />
+
+              <div className="grid gap-3 lg:grid-cols-2">
+                {best && (
+                  <Finding
+                    tone="success"
+                    eyebrow={`Mejor ${best.dimLabel.toLowerCase()}`}
+                    title={best.label}
+                    value={best.netPnl}
+                    count={best.count}
+                  >
+                    {percent(best.winRate, { decimals: 0 })} de acierto y {pnl(best.avgPnl)} por trade.
+                  </Finding>
+                )}
+                {worst && (
+                  <Finding
+                    tone="danger"
+                    eyebrow={`Peor ${worst.dimLabel.toLowerCase()}`}
+                    title={worst.label}
+                    value={worst.netPnl}
+                    count={worst.count}
+                  >
+                    Sin operar acá el período cerraría en{' '}
+                    <strong className={pnlText(worst.without)}>{pnl(worst.without)}</strong>.
+                  </Finding>
+                )}
+              </div>
             </section>
           )}
         </>

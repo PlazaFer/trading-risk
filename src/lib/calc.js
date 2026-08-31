@@ -14,7 +14,12 @@ import {
   durationMinutes,
   exchangeWeekday,
   exchangeHour,
+  exchangeMinutes,
+  minutesLabel,
+  sessionRange,
   EXCHANGE_TZ,
+  SESSIONS,
+  SESSION_BY_ID,
   WEEKDAY_LABELS,
 } from './time.js'
 
@@ -396,6 +401,27 @@ export function computeStats(trades, { startingBalance = 0 } = {}) {
   const winRs = numeric(wins.map((t) => t.r_multiple))
   const lossRs = numeric(losses.map((t) => t.r_multiple))
 
+  /**
+   * How much of its own plan each winner collected, averaged.
+   *
+   * Measured trade by trade rather than as "average R obtained / average R
+   * planned": those two averages run over different sets — the second
+   * includes trades that lost — so their ratio compares a numerator and a
+   * denominator that never described the same trade. Per trade, the number
+   * means exactly what it says: you aimed for 3R here and took 1.8R, so you
+   * kept 60% of this plan.
+   */
+  function capturedShare(list) {
+    const shares = []
+    for (const t of list) {
+      const got = Number(t.r_multiple)
+      const planned = Number(t.planned_rr)
+      if (!Number.isFinite(got) || !Number.isFinite(planned) || planned <= 0) continue
+      shares.push((got / planned) * 100)
+    }
+    return shares.length ? shares.reduce((a, b) => a + b, 0) / shares.length : null
+  }
+
   const largestWin = wins.length ? Math.max(...wins.map((t) => Number(t.net_pnl))) : 0
   const largestLoss = losses.length ? Math.min(...losses.map((t) => Number(t.net_pnl))) : 0
 
@@ -441,10 +467,7 @@ export function computeStats(trades, { startingBalance = 0 } = {}) {
      * winners, the number answers exactly one question — when the trade goes
      * your way, do you sit for the target or take the money at half of it?
      */
-    planCapture:
-      winRs.length && avgPlannedRR
-        ? ((winRs.reduce((a, b) => a + b, 0) / winRs.length) / avgPlannedRR) * 100
-        : null,
+    planCapture: capturedShare(wins),
 
     // Everything as a share of the account.
     returnPct: asPct(netPnl) ?? 0,
@@ -746,29 +769,45 @@ export function groupPerformance(trades, keyFn, { labelFn } = {}) {
     }
   }
 
-  return [...buckets.values()]
-    .map((b) => {
-      const wins = b.trades.filter((t) => Number(t.net_pnl) > 0)
-      const losses = b.trades.filter((t) => Number(t.net_pnl) < 0)
-      const netPnl = b.trades.reduce((s, t) => s + (Number(t.net_pnl) || 0), 0)
-      const grossProfit = wins.reduce((s, t) => s + Number(t.net_pnl), 0)
-      const grossLoss = Math.abs(losses.reduce((s, t) => s + Number(t.net_pnl), 0))
-      const rs = numeric(b.trades.map((t) => t.r_multiple))
-      return {
-        key: b.key,
-        label: b.label,
-        count: b.trades.length,
-        wins: wins.length,
-        losses: losses.length,
-        netPnl: round(netPnl, 2),
-        avgPnl: round(netPnl / b.trades.length, 2),
-        winRate: (wins.length / b.trades.length) * 100,
-        profitFactor: grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? Infinity : 0,
-        avgR: rs.length ? round(rs.reduce((a, c) => a + c, 0) / rs.length, 2) : null,
-        trades: b.trades,
-      }
-    })
-    .sort((a, b) => b.netPnl - a.netPnl)
+  return [...buckets.values()].map(summarizeBucket).sort((a, b) => b.netPnl - a.netPnl)
+}
+
+/**
+ * The summary every grouped view reads: one bucket of trades reduced to the
+ * handful of numbers that decide whether to keep trading it.
+ *
+ * Breakeven trades are counted explicitly rather than folded into losses.
+ * They sit in the denominator of the win rate — they consumed a decision —
+ * but calling them losses would overstate how often the idea actually failed,
+ * and that error compounds across every breakdown on the page.
+ */
+function summarizeBucket(b) {
+  const trades = b.trades
+  const wins = trades.filter((t) => Number(t.net_pnl) > 0)
+  const losses = trades.filter((t) => Number(t.net_pnl) < 0)
+  const breakeven = trades.length - wins.length - losses.length
+  const netPnl = trades.reduce((s, t) => s + (Number(t.net_pnl) || 0), 0)
+  const grossProfit = wins.reduce((s, t) => s + Number(t.net_pnl), 0)
+  const grossLoss = Math.abs(losses.reduce((s, t) => s + Number(t.net_pnl), 0))
+  const rs = numeric(trades.map((t) => t.r_multiple))
+  const days = new Set(trades.map((t) => t.day).filter(Boolean))
+
+  return {
+    key: b.key,
+    label: b.label,
+    count: trades.length,
+    wins: wins.length,
+    losses: losses.length,
+    breakeven,
+    netPnl: round(netPnl, 2),
+    avgPnl: round(netPnl / trades.length, 2),
+    winRate: (wins.length / trades.length) * 100,
+    profitFactor: grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? Infinity : 0,
+    avgR: rs.length ? round(rs.reduce((a, c) => a + c, 0) / rs.length, 2) : null,
+    totalR: rs.length ? round(rs.reduce((a, c) => a + c, 0), 2) : null,
+    days: days.size,
+    trades,
+  }
 }
 
 /** Histogram of R-multiples, bucketed to whole R. */
@@ -1095,4 +1134,288 @@ export function buildRunningAverage(trades, field = 'r_multiple') {
     sum += v
     return round(sum / (i + 1), 3)
   })
+}
+
+/* ==================================================================
+   WHEN — session, weekday and intraday analysis.
+
+   The dimension a discretionary futures trader can act on fastest is
+   not the setup, it is the clock. Everything below answers one family
+   of questions: which day, which session, which half hour is paying
+   for the account, and which one is quietly funding the other side.
+   ================================================================== */
+
+/** The trading day runs 18:00 ET → 17:59 ET, so Asia stays in one piece. */
+const DAY_OPEN_MIN = 18 * 60
+
+/** Position of an ET minute within the futures trading day (0 = 18:00). */
+function sessionClockPosition(minutes) {
+  return (minutes - DAY_OPEN_MIN + 1440) % 1440
+}
+
+/**
+ * Weekday × session grid — the view that answers "which days do I lose,
+ * and in which session".
+ *
+ * Only the sessions and weekdays that were actually traded get a column or a
+ * row. A 7 × 7 grid of mostly empty cells reads as an absence of data even
+ * when the data is there; the traded subset reads as a shape.
+ *
+ * Every cell carries its whole bucket summary, so the same grid can be tinted
+ * by money, by win rate or by average R without recomputing anything.
+ */
+export function buildSessionMatrix(trades) {
+  const cells = new Map()
+  const sessionsSeen = new Set()
+  const weekdaysSeen = new Set()
+
+  for (const t of trades) {
+    const dow = exchangeWeekday(t.entry_at)
+    const session = t.session || sessionOf(t.entry_at)
+    if (dow === null || !session) continue
+    sessionsSeen.add(session)
+    weekdaysSeen.add(dow)
+    const key = `${dow}|${session}`
+    const list = cells.get(key)
+    if (list) list.push(t)
+    else cells.set(key, [t])
+  }
+
+  const sessions = SESSIONS.filter((s) => sessionsSeen.has(s.id)).map((s) => ({
+    id: s.id,
+    label: s.label,
+    short: s.short,
+    range: sessionRange(s.id),
+  }))
+  const weekdays = WEEKDAY_ORDER.filter((d) => weekdaysSeen.has(d))
+
+  const summarize = (list, label) =>
+    list?.length ? summarizeBucket({ key: label, label, trades: list }) : null
+
+  // Column buckets are accumulated from the cells themselves rather than by
+  // re-filtering the trade list. Re-filtering would count a trade that has a
+  // stored session but no readable entry time — so no weekday — into a column
+  // total while it appears in no cell, and the grid would stop adding up.
+  const columnTrades = sessions.map(() => [])
+
+  const rows = weekdays.map((dow) => {
+    const rowTrades = []
+    const row = sessions.map((s, i) => {
+      const list = cells.get(`${dow}|${s.id}`) || []
+      rowTrades.push(...list)
+      columnTrades[i].push(...list)
+      return summarize(list, `${WEEKDAY_LABELS[dow]} · ${s.label}`)
+    })
+    return {
+      key: dow,
+      label: WEEKDAY_LABELS[dow],
+      cells: row,
+      total: summarize(rowTrades, WEEKDAY_LABELS[dow]),
+    }
+  })
+
+  const totals = sessions.map((s, i) => summarize(columnTrades[i], s.label))
+  const graded = columnTrades.flat()
+
+  // One scale for the whole grid: a cell twice as dark really is twice the
+  // money, in any row and any column.
+  const maxAbs = Math.max(
+    ...rows.flatMap((r) => r.cells.map((c) => Math.abs(c?.netPnl ?? 0))),
+    1
+  )
+
+  return {
+    sessions,
+    rows,
+    totals,
+    maxAbs,
+    grand: summarize(graded, 'Total'),
+    // A trade with no readable entry time has no weekday and no session, so
+    // it cannot appear anywhere in the grid. Reporting how many were covered
+    // lets the UI say so instead of quietly showing a total that does not
+    // match the one at the top of the page.
+    covered: graded.length,
+  }
+}
+
+/**
+ * The intraday curve: results per half hour of the trading day.
+ *
+ * Slots are ordered from the Globex open (18:00 ET) rather than from
+ * midnight, so an Asia session reads as one continuous block instead of
+ * being split across the two ends of the chart. Gaps *inside* the traded
+ * range are kept as empty slots — a half hour you never touch between two
+ * you do is a deliberate habit, and it should be visible.
+ */
+export function buildIntradayProfile(trades, { slot = 30 } = {}) {
+  const buckets = new Map()
+
+  for (const t of trades) {
+    const minutes = exchangeMinutes(t.entry_at)
+    if (minutes === null) continue
+    const start = Math.floor(minutes / slot) * slot
+    const list = buckets.get(start)
+    if (list) list.push(t)
+    else buckets.set(start, [t])
+  }
+
+  if (!buckets.size) return { slots: [], maxAbs: 1, slot }
+
+  const positions = [...buckets.keys()].map(sessionClockPosition)
+  const first = Math.min(...positions)
+  const last = Math.max(...positions)
+
+  const slots = []
+  for (let pos = first; pos <= last; pos += slot) {
+    const start = (pos + DAY_OPEN_MIN) % 1440
+    const list = buckets.get(start) || []
+    const summary = list.length
+      ? summarizeBucket({ key: start, label: minutesLabel(start), trades: list })
+      : { key: start, label: minutesLabel(start), count: 0, netPnl: 0, wins: 0, losses: 0, breakeven: 0, winRate: 0, avgR: null, avgPnl: 0, trades: [] }
+    const session = sessionForMinute(start)
+    slots.push({
+      ...summary,
+      key: start,
+      label: minutesLabel(start),
+      endLabel: minutesLabel(start + slot),
+      title: `${minutesLabel(start)} – ${minutesLabel(start + slot)} ET`,
+      session,
+      sessionLabel: SESSION_BY_ID[session]?.label ?? '',
+    })
+  }
+
+  return { slots, maxAbs: Math.max(...slots.map((s) => Math.abs(s.netPnl)), 1), slot }
+}
+
+/** Which session owns a given ET minute-of-day. */
+function sessionForMinute(minutes) {
+  for (const s of SESSIONS) {
+    if (s.wraps) {
+      if (minutes >= s.from || minutes < s.to) return s.id
+    } else if (minutes >= s.from && minutes < s.to) {
+      return s.id
+    }
+  }
+  return 'afterhours'
+}
+
+const HOLD_BUCKETS = [
+  { key: 'scalp', label: '< 5 min', from: 0, to: 5 },
+  { key: 'short', label: '5 – 15 min', from: 5, to: 15 },
+  { key: 'mid', label: '15 – 30 min', from: 15, to: 30 },
+  { key: 'hour', label: '30 – 60 min', from: 30, to: 60 },
+  { key: 'long', label: '1 – 2 h', from: 60, to: 120 },
+  { key: 'swing', label: '> 2 h', from: 120, to: Infinity },
+]
+
+/**
+ * Results by how long the position was held.
+ *
+ * Pairs with the winner/loser hold times: knowing that losers last longer is
+ * a symptom, but this says *where* the money actually is. Most intraday
+ * traders find one band that pays and two that only generate commissions.
+ */
+export function buildHoldBuckets(trades) {
+  const withDuration = trades.filter((t) => Number.isFinite(Number(t.duration_min)))
+  if (!withDuration.length) return []
+
+  return HOLD_BUCKETS.map((b) => {
+    const list = withDuration.filter((t) => {
+      const d = Number(t.duration_min)
+      return d >= b.from && d < b.to
+    })
+    return list.length
+      ? { ...summarizeBucket({ key: b.key, label: b.label, trades: list }) }
+      : { key: b.key, label: b.label, count: 0, netPnl: 0, wins: 0, losses: 0, breakeven: 0, winRate: 0, avgR: null, avgPnl: 0, trades: [] }
+  })
+}
+
+/**
+ * The slices of the journal that are actually carrying it, and the ones
+ * bleeding it — ranked, across every dimension at once.
+ *
+ * `minCount` is the whole point. Without it the "worst hour" is invariably a
+ * single bad trade at 04:30, which is noise dressed as a finding. Four trades
+ * is not statistical significance either, but it is the floor below which a
+ * journal should not be making claims at all, and the count travels with
+ * every row so the reader can discount it themselves.
+ *
+ * `without` is what the total would have been with that slice removed. It
+ * turns a ranking into a decision: "stop trading Mondays after lunch" is only
+ * worth saying if the number moves.
+ */
+export function rankSlices(trades, { minCount = 4, maxShare = 0.6 } = {}) {
+  const total = trades.reduce((s, t) => s + (Number(t.net_pnl) || 0), 0)
+
+  /**
+   * Direction is deliberately absent. Long and short partition the journal
+   * roughly in half, so the "best" of the two is always about half the book
+   * — a true statement that recommends nothing. The dimensions kept here are
+   * the ones a trader can act on by changing their schedule or their
+   * checklist.
+   */
+  const dimensions = [
+    { id: 'session', label: 'Sesión', groups: groupPerformance(trades, (t) => t.session || sessionOf(t.entry_at), { labelFn: (id) => SESSION_BY_ID[id]?.label ?? id }) },
+    { id: 'weekday', label: 'Día', groups: weekdayPerformance(trades).map((g) => ({ ...g, label: WEEKDAY_LABELS[g.key] })) },
+    { id: 'slot', label: 'Franja', groups: buildIntradayProfile(trades).slots.filter((s) => s.count > 0).map((s) => ({ ...s, label: s.title.replace(' ET', '') })) },
+    { id: 'setup', label: 'Setup', groups: groupPerformance(trades, (t) => t.setup || null) },
+  ]
+
+  // A slice big enough to be most of the journal is not a slice, it is the
+  // journal. Naming "NY AM" as the best session when two thirds of every
+  // trade happens there describes the habit, not an edge inside it.
+  const shareCap = Math.max(trades.length * maxShare, minCount)
+
+  const slices = []
+  for (const dim of dimensions) {
+    for (const g of dim.groups) {
+      if (g.count < minCount || g.count > shareCap) continue
+      slices.push({
+        dim: dim.id,
+        dimLabel: dim.label,
+        key: `${dim.id}:${g.key}`,
+        label: g.label,
+        count: g.count,
+        netPnl: g.netPnl,
+        avgPnl: g.avgPnl,
+        winRate: g.winRate,
+        avgR: g.avgR,
+        without: round(total - g.netPnl, 2),
+      })
+    }
+  }
+
+  const byMoney = [...slices].sort((a, b) => b.netPnl - a.netPnl)
+  return {
+    total: round(total, 2),
+    best: byMoney.filter((s) => s.netPnl > 0),
+    worst: byMoney.filter((s) => s.netPnl < 0).reverse(),
+  }
+}
+
+/**
+ * The same statistics for the period before this one, and the change.
+ *
+ * A journal without a comparison is a snapshot; the only question a trader
+ * ever really asks of one is "better or worse than last time". `null` where
+ * there is no previous period, so the UI can stay quiet instead of printing
+ * a triumphant +100% against an empty month.
+ */
+export function diffStats(current, previous) {
+  if (!previous || !previous.count) return null
+  const delta = (key) => round((current[key] || 0) - (previous[key] || 0), 4)
+  return {
+    count: delta('count'),
+    netPnl: delta('netPnl'),
+    winRate: delta('winRate'),
+    profitFactor:
+      Number.isFinite(current.profitFactor) && Number.isFinite(previous.profitFactor)
+        ? round(current.profitFactor - previous.profitFactor, 2)
+        : null,
+    expectancy: delta('expectancy'),
+    avgR:
+      current.avgR !== null && previous.avgR !== null ? round(current.avgR - previous.avgR, 2) : null,
+    maxDrawdown: delta('maxDrawdown'),
+    previous,
+  }
 }

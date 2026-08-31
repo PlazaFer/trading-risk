@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
-import { BarChart3, Download, ShieldAlert, TrendingDown, X } from 'lucide-react'
+import { BarChart3, Clock, Download, Layers, ShieldAlert, X } from 'lucide-react'
 
 import { useJournal } from '../context/JournalContext.jsx'
-import { buildDailySeries, computeStats } from '../lib/calc.js'
-import { filterByPeriod, describeRange } from '../lib/periods.js'
+import { useUI } from '../context/UIContext.jsx'
+import { buildDailySeries, computeStats, diffStats } from '../lib/calc.js'
+import { filterByPeriod, filterByRange, describeRange, previousRange, resolveRange } from '../lib/periods.js'
 import { exportDailyCsv } from '../lib/exporter.js'
 import { percent, pnl, pnlText, profitFactor } from '../lib/format.js'
 import { SESSIONS, sessionLabel } from '../lib/time.js'
@@ -11,14 +12,34 @@ import { SESSIONS, sessionLabel } from '../lib/time.js'
 import PeriodPicker from '../components/ui/PeriodPicker.jsx'
 import MultiSelect from '../components/ui/MultiSelect.jsx'
 import EmptyState from '../components/ui/EmptyState.jsx'
-import PerformanceTab from '../components/analytics/PerformanceTab.jsx'
-import DrawdownTab from '../components/analytics/DrawdownTab.jsx'
+import SummaryTab from '../components/analytics/SummaryTab.jsx'
+import WhenTab from '../components/analytics/WhenTab.jsx'
+import WhatTab from '../components/analytics/WhatTab.jsx'
 import RiskTab from '../components/analytics/RiskTab.jsx'
 
+/**
+ * Analytics.
+ *
+ * Four tabs, each one a question rather than a category:
+ *
+ *   Resumen  — is the system paying?
+ *   Cuándo   — which day, session and half hour is it paying in?
+ *   Qué      — which setup, side and size?
+ *   Riesgo   — what did it cost to sit through, and did I follow my rules?
+ *
+ * The rule that keeps the page readable is that a number belongs to exactly
+ * one tab. The win rate used to appear six times across this screen; a figure
+ * repeated in four places stops being an emphasis and becomes a reason to
+ * skim past all four.
+ *
+ * Every tab reads the same filtered set, so a filter applied while looking at
+ * sessions still holds when you switch back to the summary.
+ */
 const TABS = [
-  { id: 'performance', label: 'Rendimiento', icon: BarChart3 },
-  { id: 'drawdown', label: 'Drawdown', icon: TrendingDown },
-  { id: 'risk', label: 'Riesgo y disciplina', icon: ShieldAlert },
+  { id: 'summary', label: 'Resumen', icon: BarChart3 },
+  { id: 'when', label: 'Cuándo', icon: Clock },
+  { id: 'what', label: 'Qué', icon: Layers },
+  { id: 'risk', label: 'Riesgo', icon: ShieldAlert },
 ]
 
 const EMPTY_FILTERS = {
@@ -32,21 +53,11 @@ const EMPTY_FILTERS = {
 
 const OUTCOME_LABELS = { win: 'Ganadores', loss: 'Perdedores', breakeven: 'Breakeven' }
 
-/**
- * Analytics.
- *
- * Three tabs rather than one very long page, because the questions are
- * genuinely separate: what the strategy earns, what it costs to sit through,
- * and whether the process was followed. Every tab reads the same filtered
- * set, so a filter applied while looking at drawdown still holds when you
- * switch back to performance.
- */
 export default function AnalyticsPage() {
   const { trades, account, settings, periodAnchor } = useJournal()
+  const { period, setPeriod, customRange, setCustomRange } = useUI()
 
-  const [tab, setTab] = useState('performance')
-  const [period, setPeriod] = useState('all')
-  const [customRange, setCustomRange] = useState({ from: '', to: '' })
+  const [tab, setTab] = useState('summary')
   const [filters, setFilters] = useState(EMPTY_FILTERS)
 
   const inPeriod = useMemo(
@@ -59,23 +70,41 @@ export default function AnalyticsPage() {
    * but "long AND in the NY AM session". That is how a trader phrases the
    * question, and an empty facet means "no opinion" rather than "none".
    */
-  const scoped = useMemo(() => {
+  const matches = useMemo(() => {
     const any = (list, v) => !list.length || list.includes(v)
-    return inPeriod.filter(
-      (t) =>
-        any(filters.direction, t.direction) &&
-        any(filters.outcome, t.outcome) &&
-        any(filters.session, t.session) &&
-        any(filters.setup, t.setup || '—') &&
-        any(filters.symbol, t.symbol) &&
-        (!filters.tag.length || (t.tags || []).some((tag) => filters.tag.includes(tag)))
-    )
-  }, [inPeriod, filters])
+    return (t) =>
+      any(filters.direction, t.direction) &&
+      any(filters.outcome, t.outcome) &&
+      any(filters.session, t.session) &&
+      any(filters.setup, t.setup || '—') &&
+      any(filters.symbol, t.symbol) &&
+      (!filters.tag.length || (t.tags || []).some((tag) => filters.tag.includes(tag)))
+  }, [filters])
+
+  const scoped = useMemo(() => inPeriod.filter(matches), [inPeriod, matches])
 
   const stats = useMemo(
     () => computeStats(scoped, { startingBalance: account.startingBalance }),
     [scoped, account.startingBalance]
   )
+
+  /**
+   * The same statistics for the window of equal length that ended the day
+   * before this one started — the only comparison that means anything. The
+   * active filters carry over, so "my NY AM trades against my NY AM trades
+   * last month" is a question the header can actually answer.
+   */
+  const diff = useMemo(() => {
+    const { from, to } = resolveRange(period, customRange, periodAnchor)
+    const prev = previousRange(from, to)
+    if (!prev) return null
+    const previousTrades = filterByRange(trades, prev.from, prev.to).filter(matches)
+    if (!previousTrades.length) return null
+    return diffStats(
+      stats,
+      computeStats(previousTrades, { startingBalance: account.startingBalance })
+    )
+  }, [trades, period, customRange, periodAnchor, matches, stats, account.startingBalance])
 
   // Option lists are built from what is actually in the period, with counts,
   // so a filter never offers a value that would empty the screen.
@@ -110,8 +139,7 @@ export default function AnalyticsPage() {
   }, [inPeriod])
 
   const activeChips = useMemo(() => {
-    const labelFor = (facet, id) =>
-      options[facet]?.find((o) => o.id === id)?.label ?? String(id)
+    const labelFor = (facet, id) => options[facet]?.find((o) => o.id === id)?.label ?? String(id)
     return Object.entries(filters).flatMap(([facet, values]) =>
       values.map((id) => ({ facet, id, label: labelFor(facet, id) }))
     )
@@ -128,13 +156,13 @@ export default function AnalyticsPage() {
       <EmptyState
         icon={BarChart3}
         title="Sin datos para analizar"
-        message="Cargá algunos trades y esta sección se llena sola: R:R obtenido contra planificado, rendimiento por sesión y por hora, drawdown, costo de cada error y más."
+        message="Cargá algunos trades y esta sección se llena sola: en qué sesión y en qué franja horaria ganás y perdés, qué día de la semana te cuesta más, drawdown, costo de cada error y más."
       />
     )
   }
 
   const ActiveTab =
-    tab === 'drawdown' ? DrawdownTab : tab === 'risk' ? RiskTab : PerformanceTab
+    tab === 'when' ? WhenTab : tab === 'what' ? WhatTab : tab === 'risk' ? RiskTab : SummaryTab
 
   return (
     <div className="space-y-5">
@@ -145,11 +173,8 @@ export default function AnalyticsPage() {
           <p className="text-sm text-ink-soft">
             {stats.count} {stats.count === 1 ? 'trade' : 'trades'} en {stats.tradingDays}{' '}
             {stats.tradingDays === 1 ? 'día' : 'días'} ·{' '}
-            <span className={pnlText(stats.netPnl)}>
-              {pnl(stats.netPnl)}
-            </span>{' '}
-            · {percent(stats.winRate, { decimals: 0 })} WR · PF{' '}
-            {profitFactor(stats.profitFactor)} ·{' '}
+            <span className={pnlText(stats.netPnl)}>{pnl(stats.netPnl)}</span> ·{' '}
+            {percent(stats.winRate, { decimals: 0 })} WR · PF {profitFactor(stats.profitFactor)} ·{' '}
             <span className="text-ink-faint">{describeRange(period, customRange, periodAnchor)}</span>
           </p>
         </div>
@@ -174,17 +199,38 @@ export default function AnalyticsPage() {
         </div>
       </header>
 
+      {/* ─────────────────────────────── Tabs ───────────────────────────── */}
+      <div className="flex gap-1 overflow-x-auto rounded-xl border border-line bg-bg-sub p-1 scrollbar-none">
+        {TABS.map((t) => {
+          const Icon = t.icon
+          const active = t.id === tab
+          return (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id)}
+              className={`flex flex-1 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-4 py-2 text-xs font-medium transition-all ${
+                active ? 'bg-bg-card text-ink shadow-sm' : 'text-ink-soft hover:text-ink'
+              }`}
+            >
+              <Icon className="h-3.5 w-3.5" />
+              {t.label}
+            </button>
+          )
+        })}
+      </div>
+
       {/* ───────────────────────────── Filters ──────────────────────────── */}
       <div className="card space-y-3 p-3">
         <div className="flex flex-wrap items-center gap-2">
-          <MultiSelect label="Dirección" options={options.direction} value={filters.direction} onChange={setFacet('direction')} />
-          <MultiSelect label="Resultado" options={options.outcome} value={filters.outcome} onChange={setFacet('outcome')} />
           <MultiSelect label="Sesión" options={options.session} value={filters.session} onChange={setFacet('session')} />
           <MultiSelect label="Setup" options={options.setup} value={filters.setup} onChange={setFacet('setup')} />
+          <MultiSelect label="Dirección" options={options.direction} value={filters.direction} onChange={setFacet('direction')} />
+          <MultiSelect label="Resultado" options={options.outcome} value={filters.outcome} onChange={setFacet('outcome')} />
+          <MultiSelect label="Etiquetas" options={options.tag} value={filters.tag} onChange={setFacet('tag')} />
           {options.symbol.length > 1 && (
             <MultiSelect label="Instrumento" options={options.symbol} value={filters.symbol} onChange={setFacet('symbol')} />
           )}
-          <MultiSelect label="Etiquetas" options={options.tag} value={filters.tag} onChange={setFacet('tag')} />
 
           {activeChips.length > 0 && (
             <button
@@ -215,29 +261,6 @@ export default function AnalyticsPage() {
         )}
       </div>
 
-      {/* ─────────────────────────────── Tabs ───────────────────────────── */}
-      <div className="flex gap-1 overflow-x-auto rounded-xl border border-line bg-bg-sub p-1 scrollbar-none">
-        {TABS.map((t) => {
-          const Icon = t.icon
-          const active = t.id === tab
-          return (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setTab(t.id)}
-              className={`flex flex-1 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-4 py-2 text-xs font-medium transition-all ${
-                active
-                  ? 'bg-bg-card text-ink shadow-sm'
-                  : 'text-ink-soft hover:text-ink'
-              }`}
-            >
-              <Icon className="h-3.5 w-3.5" />
-              {t.label}
-            </button>
-          )
-        })}
-      </div>
-
       {!scoped.length ? (
         <EmptyState
           compact
@@ -245,7 +268,13 @@ export default function AnalyticsPage() {
           message="Ampliá el rango de fechas o quitá alguna condición."
         />
       ) : (
-        <ActiveTab trades={scoped} stats={stats} account={account} settings={settings} />
+        <ActiveTab
+          trades={scoped}
+          stats={stats}
+          account={account}
+          settings={settings}
+          diff={diff}
+        />
       )}
     </div>
   )
